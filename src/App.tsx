@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowDown, ArrowRight, BookOpen, Check, CheckCheck,
-  CircleHelp, Clock3, FileText, LoaderCircle, LockKeyhole, Menu, MessageSquare,
+  Activity, ArrowDown, ArrowRight, BookOpen, CalendarClock, Check, CheckCheck,
+  CircleHelp, Clock3, FileText, FileSearch, FolderOpen, Globe2, LoaderCircle, LockKeyhole, Menu, MessageSquare,
   ListTodo, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen,
-  Trash2, X,
+  Trash2, Upload, Workflow, X,
 } from 'lucide-react'
 import { api } from './api'
-import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
+import type { AuditEvent, Automation, Connector, DocumentAsset, ForgeTask, MemoryEntry, Plan, ResearchReport } from './types'
 import './App.css'
+import './feature.css'
 
-type Section = 'chat' | 'plans' | 'tasks' | 'memory' | 'activity' | 'settings'
+type Section = 'chat' | 'plans' | 'tasks' | 'memory' | 'activity' | 'automations' | 'library' | 'research' | 'connectors' | 'settings'
 type Toast = { id: number; text: string; kind: 'success' | 'error' }
 
 const navigation: Array<{ id: Section; label: string; icon: typeof MessageSquare }> = [
@@ -18,6 +19,10 @@ const navigation: Array<{ id: Section; label: string; icon: typeof MessageSquare
   { id: 'tasks', label: 'Tasks', icon: CheckCheck },
   { id: 'memory', label: 'Memory', icon: BookOpen },
   { id: 'activity', label: 'Activity', icon: Activity },
+  { id: 'automations', label: 'Automations', icon: Workflow },
+  { id: 'library', label: 'Files & documents', icon: FolderOpen },
+  { id: 'research', label: 'Research', icon: Globe2 },
+  { id: 'connectors', label: 'Connected apps', icon: CalendarClock },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
 
@@ -34,6 +39,11 @@ function App() {
   const [tasks, setTasks] = useState<ForgeTask[]>([])
   const [memories, setMemories] = useState<MemoryEntry[]>([])
   const [activity, setActivity] = useState<AuditEvent[]>([])
+  const [automations, setAutomations] = useState<Automation[]>([])
+  const [documents, setDocuments] = useState<DocumentAsset[]>([])
+  const [connectors, setConnectors] = useState<Connector[]>([])
+  const [researchReport, setResearchReport] = useState<ResearchReport | null>(null)
+  const [researchQuestion, setResearchQuestion] = useState('')
   const [draft, setDraft] = useState('')
   const [searchText, setSearchText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -58,11 +68,14 @@ function App() {
 
   async function refreshData() {
     try {
-      const [taskRows, memoryRows, activityRows, planRows] = await Promise.all([api.tasks(), api.memories(), api.activity(), api.plans()])
+      const [taskRows, memoryRows, activityRows, planRows, automationRows, documentRows, connectorRows] = await Promise.all([api.tasks(), api.memories(), api.activity(), api.plans(), api.automations(), api.documents(), api.connectors()])
       setTasks(taskRows)
       setMemories(memoryRows)
       setActivity(activityRows)
       setPlans(planRows)
+      setAutomations(automationRows)
+      setDocuments(documentRows)
+      setConnectors(connectorRows)
       setCurrentPlanId((current) => current || planRows[0]?.id || '')
       setReady(true)
       setError('')
@@ -98,6 +111,24 @@ function App() {
 
   async function refreshActivity() {
     try { setActivity(await api.activity()) } catch { /* keep the last visible audit list */ }
+  }
+
+  async function toggleAutomation(automation: Automation) {
+    try {
+      const updated = await api.toggleAutomation(automation.id, !automation.enabled)
+      setAutomations((items) => items.map((item) => item.id === updated.id ? { ...item, enabled: updated.enabled } : item))
+      await refreshActivity()
+      toast(`${automation.name} ${updated.enabled ? 'enabled' : 'paused'}.`)
+    } catch (err) { toast(err instanceof Error ? err.message : 'Could not update automation.', 'error') }
+  }
+
+  async function runResearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (researchQuestion.trim().length < 2 || loading) return
+    setLoading(true)
+    try { setResearchReport(await api.research(researchQuestion)); await refreshActivity(); toast('Research request prepared with source tracking.') }
+    catch (err) { toast(err instanceof Error ? err.message : 'Could not prepare research.', 'error') }
+    finally { setLoading(false) }
   }
 
   function updateStepTitle(planId: string, stepId: string, value: string) {
@@ -338,6 +369,24 @@ function App() {
             <div className="audit-notice"><ShieldCheck size={17} /><span>Activity shows request/task details from records still saved on this device. Delete a plan to remove those details; its generic approval and outcome history remains. Export first if you want to keep a detailed copy.</span></div>
             {activity.length ? <div className="timeline">{activity.map((event) => <article className="timeline-item" key={event.id}><div className={`timeline-dot ${event.eventType.includes('failed') ? 'failed' : ''}`} /><div className="timeline-card"><div className="timeline-header"><strong>{event.summary}</strong><time>{formatDate(event.occurredAt)}</time></div>{event.context && <p className="event-context">{event.context}</p>}{event.detailsRemoved && <span className="event-redacted"><LockKeyhole size={12} /> Details removed</span>}<span className="event-kind">{event.eventType.replaceAll('.', ' · ')}</span></div></article>)}</div> : <EmptyState icon={<Activity size={20} />} title="Nothing has happened yet" text="Once you draft a plan, this timeline will show it here." />}
           </section>}
+
+          {section === 'automations' && <section className="page-view"><PageHeader icon={<Workflow size={19} />} eyebrow="PROACTIVE WORK" title="Automations" description="Schedule briefings, reports and alerts. Every workflow has its own permission mode." action={<button className="primary-button" onClick={() => toast('Automation builder is ready for a trigger, action and permission mode.') }><Plus size={16} /> New automation</button>} />
+            <div className="feature-banner"><Workflow size={17} /><div><strong>Build once, stay in control</strong><span>Suggest mode prepares work. Approve mode pauses before important actions. Automatic mode is reserved for trusted workflows.</span></div></div>
+            <div className="automation-list">{automations.map((automation) => <article className="automation-card" key={automation.id}><div className="automation-icon"><CalendarClock size={18} /></div><div className="automation-main"><div className="automation-title"><strong>{automation.name}</strong><span className={automation.enabled ? 'status-on' : 'status-off'}>{automation.enabled ? 'Active' : 'Paused'}</span></div><p>{automation.description}</p><div className="automation-meta"><span>{automation.trigger}</span><span>{automation.permissionMode} mode</span><span>{automation.actionSummary}</span></div></div><button className={automation.enabled ? 'secondary-button' : 'primary-button'} onClick={() => void toggleAutomation(automation)}>{automation.enabled ? 'Pause' : 'Enable'}</button></article>)}</div>
+          </section>}
+
+          {section === 'library' && <section className="page-view"><PageHeader icon={<FolderOpen size={19} />} eyebrow="WORKSPACE LIBRARY" title="Files & documents" description="Transform PDFs, Word files, spreadsheets, presentations, images, audio, transcripts and CSV data." action={<button className="primary-button" onClick={() => toast('Choose a workspace folder in Manus Studio to add local files.') }><Upload size={16} /> Add files</button>} />
+            <div className="format-strip"><span><FileText size={15} /> PDF / DOCX / PPTX</span><span><FileSearch size={15} /> Search & summarize</span><span><Workflow size={15} /> Convert to actions</span></div>
+            <div className="document-grid">{documents.map((document) => <article className="document-card" key={document.id}><div className="document-top"><div className="document-type">{document.type.toUpperCase()}</div><span className="status-on">Ready</span></div><h2>{document.name}</h2><p>{document.size} · Updated {formatDate(document.updatedAt)}</p><div className="capability-tags">{document.capabilities.map((capability) => <span key={capability}>{capability}</span>)}</div></article>)}</div>
+            <div className="empty-state compact-empty"><FileSearch size={20} /><h2>Drop in a contract, meeting transcript or spreadsheet</h2><p>Forge will extract useful structure, cite the source file and ask before creating or sharing anything.</p></div>
+          </section>}
+
+          {section === 'research' && <section className="page-view"><PageHeader icon={<Globe2 size={19} />} eyebrow="EVIDENCE WORKSPACE" title="Research" description="Ask a question, compare sources, separate facts from assumptions, and keep a cited report." />
+            <form className="research-box" onSubmit={runResearch}><textarea value={researchQuestion} onChange={(event) => setResearchQuestion(event.target.value)} placeholder="What should Forge research? e.g. Compare three competitors and cite the sources." rows={3} /><div className="research-footer"><span><Globe2 size={14} /> Source tracking is always on</span><button className="primary-button" disabled={loading || researchQuestion.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />} Prepare research</button></div></form>
+            {researchReport ? <article className="research-report"><div className="report-label"><Check size={14} /> Report prepared · {formatDate(researchReport.createdAt)}</div><h2>{researchReport.question}</h2><p>{researchReport.answer}</p><div className="assumption-box"><strong>Assumptions</strong>{researchReport.assumptions.map((assumption) => <span key={assumption}>• {assumption}</span>)}</div><h3>Sources</h3>{researchReport.sources.map((source) => <div className="source-row" key={source.id}><div><strong>{source.title}</strong><span>{source.publisher} · {source.confidence} confidence</span></div><span>{source.excerpt}</span></div>)}</article> : <EmptyState icon={<Globe2 size={20} />} title="Research with receipts" text="Your next report will show the answer, assumptions and source excerpts in one place." />}
+          </section>}
+
+          {section === 'connectors' && <section className="page-view"><PageHeader icon={<CalendarClock size={19} />} eyebrow="TOOLS & SERVICES" title="Connected apps" description="Connect the tools Forge can use. Permissions are scoped and high-impact actions still require approval." /><div className="connector-grid">{connectors.map((connector) => <article className="connector-card" key={connector.id}><div className="connector-top"><div className="connector-icon"><Sparkles size={17} /></div><span className={`connector-status ${connector.status}`}>{connector.status.replace('_', ' ')}</span></div><h2>{connector.name}</h2><p>{connector.description}</p><div className="scope-list">{connector.scopes.map((scope) => <span key={scope}>{scope}</span>)}</div><button className="secondary-button" onClick={() => toast(connector.status === 'coming_soon' ? `${connector.name} connector is staged for setup.` : `${connector.name} is available in this workspace.`)}>{connector.status === 'connected' ? 'Manage access' : 'Configure'}</button></article>)}</div></section>}
 
           {section === 'settings' && <section className="page-view">
             <PageHeader icon={<Settings2 size={19} />} eyebrow="YOUR PREFERENCES" title="Settings" description="See what this build can do today, and what remains to be connected." />

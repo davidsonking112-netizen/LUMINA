@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { db, recordAudit } from './db.js'
 import { actionHash, draftPlan } from './plan.js'
-import type { AuditEvent, ForgeTask, MemoryEntry, Plan, PlanStep } from '../src/types.js'
+import type { AuditEvent, Automation, Connector, DocumentAsset, ForgeTask, MemoryEntry, Plan, PlanStep, ResearchReport } from '../src/types.js'
 
 const app = express()
 const APPROVAL_TTL_MS = 10 * 60 * 1000
@@ -78,6 +78,60 @@ function resetApprovalForReview(plan: Plan, step: PlanStep, eventType: string, s
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'local-prototype' }))
+
+app.get('/api/capabilities', (_req, res) => res.json({
+  permissionModes: [
+    { id: 'suggest', label: 'Suggest', description: 'Recommend actions without executing them.' },
+    { id: 'approve', label: 'Approve', description: 'Run routine actions, but pause before high-impact actions.' },
+    { id: 'automatic', label: 'Automatic', description: 'Run trusted workflows without asking every time.' },
+  ],
+  inputModes: ['text', 'voice-ready', 'image-ready'],
+  actionKinds: ['send_email', 'calendar_change', 'file_operation', 'publish_content', 'record_update', 'web_research', 'document_transform'],
+}))
+
+app.get('/api/connectors', (_req, res) => {
+  const connectors: Connector[] = [
+    { id: 'local-files', name: 'Local files', category: 'Workspace', description: 'Read, create, edit and transform files in the approved workspace.', status: 'connected', scopes: ['read workspace', 'write workspace'] },
+    { id: 'web-research', name: 'Web research', category: 'Research', description: 'Compare sources, cite evidence, and monitor selected topics.', status: 'available', scopes: ['search web', 'read public pages'] },
+    { id: 'gmail', name: 'Gmail', category: 'Communication', description: 'Draft, summarize and send email with approval controls.', status: 'coming_soon', scopes: ['read email', 'draft email', 'send email'] },
+    { id: 'calendar', name: 'Calendar', category: 'Planning', description: 'Prepare and update appointments after showing an exact diff.', status: 'coming_soon', scopes: ['read calendar', 'create events', 'edit events'] },
+    { id: 'slack', name: 'Slack', category: 'Communication', description: 'Summarize channels and prepare messages for review.', status: 'coming_soon', scopes: ['read messages', 'draft messages', 'send messages'] },
+  ]
+  res.json(connectors)
+})
+
+app.get('/api/automations', (_req, res) => {
+  const automations: Automation[] = [
+    { id: 'morning-briefing', name: 'Morning briefing', description: 'Summarize today’s calendar, priorities and pending follow-ups.', trigger: 'Every weekday', schedule: '08:00', permissionMode: 'suggest', enabled: true, nextRunAt: 'Tomorrow at 08:00', actionSummary: 'Read calendar and workspace activity; prepare a briefing.' },
+    { id: 'weekly-sales', name: 'Weekly sales report', description: 'Turn the latest CSV or spreadsheet into a concise report.', trigger: 'Every Monday', schedule: '09:00', permissionMode: 'approve', enabled: false, nextRunAt: 'Not scheduled', actionSummary: 'Read sales data; create a report; ask before sharing.' },
+    { id: 'deadline-watch', name: 'Deadline watch', description: 'Alert you when a saved deadline is close or unusual activity appears.', trigger: 'When a condition changes', permissionMode: 'automatic', enabled: false, nextRunAt: 'Waiting for trigger', actionSummary: 'Monitor approved sources and notify you when attention is needed.' },
+  ]
+  res.json(automations)
+})
+
+app.post('/api/automations/:id/toggle', (req, res) => {
+  const enabled = Boolean(req.body?.enabled)
+  const name = req.params.id.replaceAll('-', ' ')
+  const automation: Automation = { id: req.params.id, name, description: 'Workflow configuration saved locally for this prototype.', trigger: 'Configured trigger', permissionMode: 'approve', enabled, actionSummary: 'No external action runs until a connector is configured.' }
+  recordAudit(enabled ? 'automation.enabled' : 'automation.disabled', 'automation', automation.id, `${enabled ? 'Enabled' : 'Disabled'} automation: ${name}.`)
+  res.json(automation)
+})
+
+app.get('/api/documents', (_req, res) => {
+  const documents: DocumentAsset[] = [
+    { id: 'workspace-guide', name: 'Workspace guide.md', type: 'text', size: '8 KB', status: 'ready', updatedAt: new Date().toISOString(), capabilities: ['summarize', 'search', 'turn into tasks'] },
+    { id: 'sales-template', name: 'Sales report template.csv', type: 'csv', size: '24 KB', status: 'ready', updatedAt: new Date().toISOString(), capabilities: ['analyze', 'chart', 'create report'] },
+  ]
+  res.json(documents)
+})
+
+app.post('/api/research', (req, res) => {
+  const question = typeof req.body?.question === 'string' ? req.body.question.trim() : ''
+  if (question.length < 2) return jsonError(res, 400, 'Enter a research question.')
+  const report: ResearchReport = { id: randomUUID(), question, answer: `Research workspace prepared for “${question}”. Add a web connector to retrieve live sources; this local preview keeps the answer clearly marked as unverified.`, assumptions: ['No live web connector is configured in this local prototype.'], sources: [{ id: 'local-disclosure', title: 'Research connector status', url: 'about:blank', publisher: 'Forge', accessedAt: new Date().toISOString(), excerpt: 'Live web retrieval is not enabled yet; no external facts are asserted.', confidence: 'low' }], createdAt: new Date().toISOString() }
+  recordAudit('research.prepared', 'research', report.id, 'Prepared a research request; live retrieval requires a web connector.')
+  res.status(201).json(report)
+})
 
 app.get('/api/tasks', (_req, res) => {
   const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all() as Array<{ id: string; title: string; created_at: string; source_plan_id: string; source_step_id: string }>
