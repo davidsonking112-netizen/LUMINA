@@ -4,15 +4,18 @@ Forge is Davids’s personal agent workspace. This repository is a greenfield bu
 
 ## Current slice
 
-This is a local, single-device prototype. It demonstrates one end-to-end flow:
+This is a local, single-device clickable prototype. Its working screens and flows are:
 
-1. Enter a request and review the task plan.
-2. Edit the exact task titles and save them.
-3. Approve one local task-creation action. Approval expires after 10 minutes.
-4. Run the approved action and see its result in Tasks and Activity.
-5. Add, edit, and forget owner-authored Memory notes.
+- Home dashboard with sample quick starts that prefill a local task plan, plus recent local tasks and activity.
+- New Task flow: enter a request, review a plan, edit exact task titles, approve or decline each local task-creation action, then run an approved step.
+- Task history with Plans, Tasks, and Activity tabs; saved plans and tasks can be searched and managed.
+- Memory where the owner can add, edit, and forget owner-authored notes.
+- Settings with privacy information, JSON export, and local data clearing.
+- Desktop sidebar collapse/expand, narrow-screen navigation drawer, task-details drawer, Escape-to-close behavior, and a Ctrl/⌘+K new-task shortcut.
 
-Plan edits invalidate earlier approvals. The server checks the current action hash and approval expiry immediately before execution. A plan is completed when every step is either run or declined; each step still shows its own outcome. Local task creation is idempotent, so retrying after a lost response does not create a duplicate. Activity details are looked up from saved plans and scrubbed from view after deletion, while generic approval/outcome entries remain. Database row deletion is not guaranteed secure erasure.
+The prototype also has clickable Inbox, Projects, Automations, Connected Apps, and Files screens. They clearly say what is not active and do not simulate access to external services. Attachment and voice buttons are visible but disabled. Quick-start prompts only prefill local plans; they do not run automatically.
+
+Plan edits invalidate earlier approvals. The server checks the current action hash and approval expiry immediately before execution. Approval expires after 10 minutes. A plan is completed when every step is either run or declined; each step still shows its own outcome. Local task creation is idempotent, so retrying after a lost response does not create a duplicate. Activity details are looked up from saved plans and scrubbed from view after deletion, while generic approval/outcome entries remain. Database row deletion is not guaranteed secure erasure.
 
 The API rejects mutation requests unless the Host and Origin are allowlisted, Fetch Metadata is same-origin, and the JSON request includes the non-simple `X-Forge-Request: 1` header. The browser test suite includes a hostile-origin HTML-form regression. This is defense in depth for the local prototype, not a substitute for authentication or deployment hardening.
 
@@ -55,4 +58,4 @@ npm run lint
 npm run test:e2e
 ```
 
-The Playwright configuration starts a separate local app and isolated test database for browser tests.
+The Playwright configuration starts a separate local app and isolated test database for browser tests. Browser coverage includes the approved-task flow, export and deletion history, hostile-origin form rejection, dashboard accessibility, responsive layout, workspace navigation, desktop sidebar collapse, and mobile drawers.

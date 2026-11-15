@@ -1,24 +1,34 @@
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowDown, ArrowRight, BookOpen, Check, CheckCheck,
-  CircleHelp, Clock3, FileText, LoaderCircle, LockKeyhole, Menu, MessageSquare,
-  ListTodo, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen,
-  Trash2, X,
+  Activity, ArrowDown, ArrowRight, Blocks, BookOpen, CalendarClock, Check, CheckCheck,
+  CircleHelp, Clock3, FileText, Files, FolderOpen, History, Home, Inbox, LoaderCircle,
+  ListTodo, LockKeyhole, Menu, MessageSquare, Mic, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
+  PanelRight, Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen, Trash2, X,
 } from 'lucide-react'
 import { api } from './api'
 import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
 import './App.css'
 
-type Section = 'chat' | 'plans' | 'tasks' | 'memory' | 'activity' | 'settings'
+type Section = 'home' | 'chat' | 'inbox' | 'projects' | 'automations' | 'memory' | 'connected' | 'files' | 'history' | 'settings'
+type HistoryTab = 'plans' | 'tasks' | 'activity'
 type Toast = { id: number; text: string; kind: 'success' | 'error' }
 
-const navigation: Array<{ id: Section; label: string; icon: typeof MessageSquare }> = [
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'plans', label: 'Plans', icon: ListTodo },
-  { id: 'tasks', label: 'Tasks', icon: CheckCheck },
+const navigation: Array<{ id: Exclude<Section, 'chat'>; label: string; icon: typeof MessageSquare }> = [
+  { id: 'home', label: 'Home', icon: Home },
+  { id: 'inbox', label: 'Inbox', icon: Inbox },
+  { id: 'projects', label: 'Projects', icon: FolderOpen },
+  { id: 'automations', label: 'Automations', icon: CalendarClock },
   { id: 'memory', label: 'Memory', icon: BookOpen },
-  { id: 'activity', label: 'Activity', icon: Activity },
+  { id: 'connected', label: 'Connected Apps', icon: Blocks },
+  { id: 'files', label: 'Files', icon: Files },
+  { id: 'history', label: 'Task history', icon: History },
   { id: 'settings', label: 'Settings', icon: Settings2 },
+]
+
+const quickStarts = [
+  'Break my top priority this week into small next steps',
+  'Turn my meeting notes into a clear project checklist',
+  'Plan a simple launch timeline with tasks I can review',
 ]
 
 function formatDate(value: string) {
@@ -26,8 +36,11 @@ function formatDate(value: string) {
 }
 
 function App() {
-  const [section, setSection] = useState<Section>('chat')
+  const [section, setSection] = useState<Section>('home')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [desktopNavCollapsed, setDesktopNavCollapsed] = useState(false)
+  const [mobileContextOpen, setMobileContextOpen] = useState(false)
+  const [historyTab, setHistoryTab] = useState<HistoryTab>('plans')
   const [plans, setPlans] = useState<Plan[]>([])
   const [currentPlanId, setCurrentPlanId] = useState('')
   const [dirtyPlanIds, setDirtyPlanIds] = useState<Set<string>>(() => new Set())
@@ -44,6 +57,7 @@ function App() {
   const [memoryTitle, setMemoryTitle] = useState('')
   const [memoryContent, setMemoryContent] = useState('')
   const [memoryBusy, setMemoryBusy] = useState(false)
+  const requestInputRef = useRef<HTMLTextAreaElement>(null)
 
   const currentPlan = plans.find((plan) => plan.id === currentPlanId)
   const filteredTasks = useMemo(() => tasks.filter((task) => task.title.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())), [tasks, searchText])
@@ -75,6 +89,24 @@ function App() {
   // This effect synchronizes the initial view with persisted local server data.
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => { void refreshData() }, [])
+
+  useEffect(() => {
+    function handleGlobalKeys(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMobileNavOpen(false)
+        setMobileContextOpen(false)
+        if (memoryDialog) setMemoryDialog(null)
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k' && !event.altKey) {
+        event.preventDefault()
+        setSection('chat')
+        setCurrentPlanId('')
+        window.requestAnimationFrame(() => requestInputRef.current?.focus())
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeys)
+    return () => window.removeEventListener('keydown', handleGlobalKeys)
+  }, [memoryDialog])
 
   async function createPlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -265,22 +297,22 @@ function App() {
     }
   }
 
-  const title = navigation.find((item) => item.id === section)?.label ?? 'Chat'
+  const title = section === 'chat' ? 'New task' : navigation.find((item) => item.id === section)?.label ?? 'Home'
 
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''}`} aria-label="Main navigation">
+    <div className={`app-shell ${desktopNavCollapsed ? 'nav-collapsed' : ''}`}>
+      <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''} ${desktopNavCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="Main navigation">
         <div className="brand-row">
           <div className="brand-mark" aria-hidden="true"><span>F</span><i /></div>
           <div className="brand-copy"><strong>Forge</strong><span>Personal agent</span></div>
           <button className="icon-button mobile-close" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}><X size={18} /></button>
         </div>
-        <button className="new-chat-button" onClick={() => { setSection('chat'); setCurrentPlanId(''); setMobileNavOpen(false) }}><SquarePen size={17} /> New chat</button>
+        <button className="new-chat-button" aria-label="New task" title="New task" onClick={() => { setSection('chat'); setCurrentPlanId(''); setMobileNavOpen(false) }}><SquarePen size={17} /><span>New task</span></button>
         <div className="nav-label">Workspace</div>
         <nav className="primary-nav">
           {navigation.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={`nav-item ${section === id ? 'active' : ''}`} aria-current={section === id ? 'page' : undefined} onClick={() => { setSection(id); setMobileNavOpen(false) }}>
-              <Icon size={18} strokeWidth={1.8} /><span>{label}</span>{id === 'tasks' && tasks.length > 0 && <span className="nav-count">{tasks.length}</span>}
+            <button key={id} className={`nav-item ${section === id ? 'active' : ''}`} aria-current={section === id ? 'page' : undefined} title={label} onClick={() => { setSection(id); if (id === 'history') setHistoryTab('plans'); setMobileNavOpen(false) }}>
+              <Icon size={18} strokeWidth={1.8} /><span>{label}</span>{id === 'history' && tasks.length > 0 && <span className="nav-count">{tasks.length}</span>}
             </button>
           ))}
         </nav>
@@ -294,36 +326,50 @@ function App() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="icon-button menu-button" aria-label="Open navigation" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen(true)}><Menu size={19} /></button><span className="breadcrumb">Workspace</span><ArrowRight size={14} className="breadcrumb-arrow" /><span className="breadcrumb-current">{title}</span></div>
+          <div className="topbar-left"><button className="icon-button menu-button" aria-label={window.matchMedia('(max-width: 680px)').matches ? mobileNavOpen ? 'Close navigation' : 'Open navigation' : desktopNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={window.matchMedia('(max-width: 680px)').matches ? mobileNavOpen : !desktopNavCollapsed} onClick={() => { if (window.matchMedia('(max-width: 680px)').matches) setMobileNavOpen((open) => !open); else setDesktopNavCollapsed((collapsed) => !collapsed) }}><span className="mobile-menu-icon"><Menu size={19} /></span><span className="desktop-menu-icon">{desktopNavCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</span></button><span className="breadcrumb">Workspace</span><ArrowRight size={14} className="breadcrumb-arrow" /><span className="breadcrumb-current">{title}</span></div>
           <div className="topbar-right"><span className={`connection-pill ${ready ? 'online' : 'offline'}`}><i />{ready ? 'Local service connected' : 'Connecting'}</span><button className="help-button" aria-label="About this prototype" onClick={() => setSection('settings')}><CircleHelp size={18} /></button></div>
         </header>
 
         <div className="main-scroll">
           {error && <div className="error-banner" role="alert"><CircleHelp size={17} /><span>{error}</span><button onClick={() => void refreshData()}>Retry</button></div>}
+          {section === 'home' && <section className="dashboard-view">
+            <PageHeader icon={<Home size={19} />} eyebrow="YOUR WORKSPACE" title="Welcome back, Davids" description="A calm place to plan what matters and keep the next step clear." action={<button className="primary-button" onClick={() => { setSection('chat'); setCurrentPlanId('') }}><SquarePen size={15} /> New task</button>} />
+            <div className="dashboard-top-grid">
+              <article className="dashboard-hero"><div className="dashboard-hero-orb"><Sparkles size={20} /></div><span className="eyebrow">A LITTLE MOMENTUM</span><h2>What would you like to move forward?</h2><p>Start with a task. Forge will make a local plan for you to review before anything happens.</p><button className="secondary-button" onClick={() => setSection('chat')}>Open new task <ArrowRight size={14} /></button></article>
+              <article className="dashboard-quick-starts"><div className="section-heading"><div><span className="eyebrow">QUICK STARTS</span><h2>Pick a place to begin</h2></div><Sparkles size={17} /></div><div className="quick-start-list">{quickStarts.map((prompt) => <button key={prompt} className="quick-start-button" onClick={() => { setDraft(prompt); setCurrentPlanId(''); setSection('chat') }}><span>{prompt}</span><ArrowRight size={15} /></button>)}</div></article>
+            </div>
+            <div className="dashboard-lower-grid">
+              <article className="dashboard-panel"><div className="section-heading"><div><span className="eyebrow">RECENT WORK</span><h2>Your latest tasks</h2></div><button className="text-link" onClick={() => { setHistoryTab('tasks'); setSection('history') }}>View history <ArrowRight size={14} /></button></div>{tasks.slice(0, 3).length ? <div className="dashboard-row-list">{tasks.slice(0, 3).map((task) => <div className="dashboard-row" key={task.id}><span className="dashboard-row-icon task"><Check size={15} /></span><span className="dashboard-row-copy"><strong>{task.title}</strong><small>Local task · {formatDate(task.createdAt)}</small></span></div>)}</div> : <div className="dashboard-empty"><CheckCheck size={17} /><span>No tasks yet. Approved local tasks will show up here.</span></div>}</article>
+              <article className="dashboard-panel"><div className="section-heading"><div><span className="eyebrow">ACTIVITY</span><h2>What’s happened</h2></div><button className="text-link" onClick={() => { setHistoryTab('activity'); setSection('history') }}>View activity <ArrowRight size={14} /></button></div>{activity.slice(0, 3).length ? <div className="dashboard-row-list">{activity.slice(0, 3).map((event) => <div className="dashboard-row" key={event.id}><span className="dashboard-row-icon activity"><Activity size={15} /></span><span className="dashboard-row-copy"><strong>{event.summary}</strong><small>{formatDate(event.occurredAt)}</small></span></div>)}</div> : <div className="dashboard-empty"><Activity size={17} /><span>Your activity will appear here as you plan and review work.</span></div>}</article>
+            </div>
+            <div className="dashboard-honesty"><LockKeyhole size={15} /><span>This prototype only creates and manages plans and tasks on this device. Connected services and automations are not active.</span></div>
+          </section>}
           {section === 'chat' && <section className="chat-layout">
             <div className="chat-column">
               <div className="chat-heading"><div className="forge-orb"><Sparkles size={20} /></div><div><p className="eyebrow">YOUR PERSONAL AGENT</p><h1>What’s on your mind?</h1><p className="heading-subtitle">Tell Forge what you need to get done. You’ll see the plan before anything happens.</p></div></div>
               {currentPlan ? <div className="conversation-block">
                 <div className="message-bubble user-bubble"><span className="message-label">YOU</span><p>{currentPlan.request}</p></div>
                 <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><strong>Forge</strong><span>Plan draft · no action has run</span></div><PlanCard plan={currentPlan} loading={loading} hasUnsavedEdits={dirtyPlanIds.has(currentPlan.id)} onTitleChange={updateStepTitle} onSave={() => void savePlan(currentPlan)} onApprove={(stepId) => void approveStep(currentPlan, stepId)} onDeny={(stepId) => void denyStep(currentPlan, stepId)} onExecute={(stepId) => void executeStep(currentPlan, stepId)} /></div></div>
-              </div> : <div className="empty-prompt"><div className="empty-prompt-icon"><MessageSquare size={19} /></div><p>Start with one thing you want to move forward.</p><span>Forge will turn it into a clear, editable plan first.</span></div>}
+              </div> : loading ? <div className="empty-prompt planning-state" role="status"><div className="empty-prompt-icon"><LoaderCircle className="spin" size={19} /></div><p>Planning your next steps…</p><span>Nothing is running. You’ll review the draft first.</span></div> : <div className="empty-prompt"><div className="empty-prompt-icon"><MessageSquare size={19} /></div><p>Start with one thing you want to move forward.</p><span>Forge will turn it into a clear, editable plan first.</span></div>}
               <form className="composer" onSubmit={createPlan}>
                 <label className="sr-only" htmlFor="request">Message Forge</label>
-                <textarea id="request" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Ask Forge to help with something…" rows={3} />
-                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Actions wait for your approval.</span></div><div className="composer-actions"><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Plan it</span></button></div></div>
+                <textarea ref={requestInputRef} id="request" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Ask Forge to help with something…" rows={3} />
+                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Actions wait for your approval.</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Plan it</span></button></div></div>
               </form>
               <p className="prototype-note">Without a model provider, plans use simple local parsing. With one configured, your request text is sent there to draft a plan. This build creates local tasks only; email, calendar, web, voice and file actions aren’t connected.</p>
             </div>
-            <aside className="right-rail"><div className="rail-card"><div className="rail-card-heading"><div className="rail-icon"><ShieldCheck size={17} /></div><strong>Your control comes first</strong></div><p>Review each action before it runs. Editing a plan clears any earlier approval.</p><div className="rail-divider" /><div className="rail-meta-row"><span>Current mode</span><strong>Review every action</strong></div><div className="rail-meta-row"><span>Approval window</span><strong>10 minutes</strong></div></div><div className="rail-card quick-card"><div className="quick-card-title"><Clock3 size={16} /><strong>Today so far</strong></div><div className="quick-stats"><div><strong>{tasks.length}</strong><span>tasks</span></div><div><strong>{activity.length}</strong><span>activity events</span></div></div><button className="text-link" onClick={() => setSection('activity')}>View activity <ArrowRight size={14} /></button></div><div className="rail-disclosure"><LockKeyhole size={14} /><span>This prototype stores data locally on this device. Don’t save secrets here.</span></div></aside>
+            <button className="context-toggle" aria-label="Open task details" aria-expanded={mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /> Task details</button>
+            {mobileContextOpen && <button className="context-backdrop" aria-label="Close task details" onClick={() => setMobileContextOpen(false)} />}
+            <aside className={`right-rail ${mobileContextOpen ? 'context-open' : ''}`} aria-label="Task details" role="complementary"><div className="context-drawer-header"><strong>Task details</strong><button className="icon-button" aria-label="Close task details" onClick={() => setMobileContextOpen(false)}><X size={17} /></button></div><div className="rail-card"><div className="rail-card-heading"><div className="rail-icon"><ShieldCheck size={17} /></div><strong>Your control comes first</strong></div><p>Review each action before it runs. Editing a plan clears any earlier approval.</p><div className="rail-divider" /><div className="rail-meta-row"><span>Current mode</span><strong>Review every action</strong></div><div className="rail-meta-row"><span>Approval window</span><strong>10 minutes</strong></div></div><div className="rail-card"><div className="quick-card-title"><FileText size={16} /><strong>Sources & files</strong></div><div className="rail-meta-row"><span>Sources</span><strong>None in this draft</strong></div><div className="rail-meta-row"><span>Files</span><strong>Not attached</strong></div></div><div className="rail-card quick-card"><div className="quick-card-title"><Clock3 size={16} /><strong>Today so far</strong></div><div className="quick-stats"><div><strong>{tasks.length}</strong><span>tasks</span></div><div><strong>{activity.length}</strong><span>activity events</span></div></div><button className="text-link" onClick={() => { setHistoryTab('activity'); setSection('history'); setMobileContextOpen(false) }}>View activity <ArrowRight size={14} /></button></div><div className="rail-disclosure"><LockKeyhole size={14} /><span>This prototype stores data locally on this device. Don’t save secrets here.</span></div></aside>
           </section>}
 
-          {section === 'tasks' && <section className="page-view"><PageHeader icon={<CheckCheck size={19} />} eyebrow="YOUR WORKSPACE" title="Tasks" description="Things Forge has created after your approval." />
+          {section === 'history' && historyTab === 'tasks' && <section className="page-view"><PageHeader icon={<History size={19} />} eyebrow="YOUR WORKSPACE" title="Task history" description="Search and manage the local work Forge has completed or saved." /><HistoryTabs active={historyTab} onChange={setHistoryTab} />
             <div className="list-toolbar"><label className="search-field"><Search size={16} /><input aria-label="Search tasks" placeholder="Search tasks" value={searchText} onChange={(event) => setSearchText(event.target.value)} />{searchText && <button aria-label="Clear search" onClick={() => setSearchText('')}><X size={14} /></button>}</label><span className="result-count">{filteredTasks.length} {filteredTasks.length === 1 ? 'task' : 'tasks'}</span></div>
             {filteredTasks.length ? <div className="item-list">{filteredTasks.map((task) => <article className="list-card task-card" key={task.id}><div className="task-check"><Check size={16} /></div><div className="list-card-main"><strong>{task.title}</strong><span>Created {formatDate(task.createdAt)}</span></div><button className="icon-button danger-hover" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)}><Trash2 size={16} /></button></article>)}</div> : <EmptyState icon={<CheckCheck size={20} />} title={searchText ? 'No tasks match that search' : 'No tasks yet'} text={searchText ? 'Try a shorter search.' : 'When you approve a plan step, its task will show up here.'} />}
           </section>}
 
-          {section === 'plans' && <section className="page-view">
-            <PageHeader icon={<ListTodo size={19} />} eyebrow="YOUR PLAN HISTORY" title="Plans" description="Review saved requests and manage their local records." />
+          {section === 'history' && historyTab === 'plans' && <section className="page-view">
+            <PageHeader icon={<History size={19} />} eyebrow="YOUR WORKSPACE" title="Task history" description="Search and manage your saved plans, tasks and activity." /><HistoryTabs active={historyTab} onChange={setHistoryTab} />
             <div className="list-toolbar"><label className="search-field"><Search size={16} /><input aria-label="Search plans" placeholder="Search plans" value={searchText} onChange={(event) => setSearchText(event.target.value)} />{searchText && <button aria-label="Clear search" onClick={() => setSearchText('')}><X size={14} /></button>}</label><span className="result-count">{filteredPlans.length} {filteredPlans.length === 1 ? 'plan' : 'plans'}</span></div>
             {filteredPlans.length ? <div className="plan-history-list">{filteredPlans.map((plan) => <article className="plan-history-card" key={plan.id}><div className="plan-history-icon"><ListTodo size={16} /></div><div className="plan-history-main"><strong>{plan.request}</strong><span>{plan.steps.length} {plan.steps.length === 1 ? 'step' : 'steps'} · {plan.status.replace('_', ' ')} · Updated {formatDate(plan.updatedAt)}</span></div><button className="secondary-button" onClick={() => { setCurrentPlanId(plan.id); setSection('chat') }}>Open plan</button><button className="icon-button danger-hover" aria-label="Delete plan and linked local tasks" onClick={() => void deletePlan(plan)}><Trash2 size={16} /></button></article>)}</div> : <EmptyState icon={<ListTodo size={20} />} title={searchText ? 'No plans match that search' : 'No saved plans yet'} text={searchText ? 'Try a shorter search.' : 'When you ask Forge to plan something, you’ll find the saved request here.'} />}
           </section>}
@@ -334,7 +380,17 @@ function App() {
             {filteredMemories.length ? <div className="memory-grid">{filteredMemories.map((entry) => <article className="memory-card" key={entry.id}><div className="memory-card-top"><span className="memory-source"><span className="source-dot" /> You added this</span><button className="icon-button" aria-label={`More actions for ${entry.title}`} onClick={() => openMemory(entry)}><MoreHorizontal size={17} /></button></div><h2>{entry.title}</h2><p>{entry.content}</p><div className="memory-card-footer"><span>Updated {formatDate(entry.updatedAt)}</span><div><button onClick={() => openMemory(entry)}>Edit</button><button className="danger-link" onClick={() => void deleteMemory(entry)}>Forget</button></div></div></article>)}</div> : <EmptyState icon={<BookOpen size={20} />} title={searchText ? 'No memories match that search' : 'Your memory starts with you'} text={searchText ? 'Try a shorter search.' : 'Add a preference or detail you want to keep nearby. You’re in control of every note.'} action={!searchText ? <button className="primary-button" onClick={() => openMemory('new')}><Plus size={16} /> Add a memory</button> : undefined} />}
           </section>}
 
-          {section === 'activity' && <section className="page-view"><PageHeader icon={<Activity size={19} />} eyebrow="TRANSPARENCY" title="Activity" description="A clear record of what Forge planned, what you approved, and what happened." />
+          {section === 'inbox' && <section className="page-view"><PageHeader icon={<Inbox size={19} />} eyebrow="YOUR MESSAGES" title="Inbox" description="A future home for messages you choose to connect." /><FeatureState icon={<Inbox size={21} />} title="No inbox is connected" description="Forge can’t read, draft or send email in this prototype. Once a mail service is connected, messages will only be sent after you review and approve them." action={<button className="secondary-button" onClick={() => setSection('settings')}>View privacy settings <ArrowRight size={14} /></button>} /></section>}
+
+          {section === 'projects' && <section className="page-view"><PageHeader icon={<FolderOpen size={19} />} eyebrow="YOUR WORKSPACES" title="Projects" description="Keep related plans and context together as the workspace grows." /><FeatureState icon={<FolderOpen size={21} />} title="Project spaces aren’t active yet" description="For now, your saved requests and local tasks live in Task history. This screen doesn’t create or sync project data." action={<button className="secondary-button" onClick={() => { setHistoryTab('plans'); setSection('history') }}>Browse saved plans <ArrowRight size={14} /></button>} /></section>}
+
+          {section === 'automations' && <section className="page-view"><PageHeader icon={<CalendarClock size={19} />} eyebrow="BACKGROUND WORK" title="Automations" description="Nothing runs on a schedule or in the background in this prototype." /><FeatureState icon={<CalendarClock size={21} />} title="No automations are running" description="Scheduled and event-triggered workflows aren’t connected. Every plan you make here starts only when you submit it, and each local action waits for approval." action={<button className="secondary-button" onClick={() => { setSection('chat'); setCurrentPlanId('') }}>Plan a task instead <ArrowRight size={14} /></button>} /></section>}
+
+          {section === 'connected' && <section className="page-view"><PageHeader icon={<Blocks size={19} />} eyebrow="PERMISSIONS YOU CONTROL" title="Connected Apps" description="See which services are linked and what Forge can access." /><div className="connection-summary"><span className="connection-summary-icon"><LockKeyhole size={18} /></span><div><strong>No apps connected</strong><p>This prototype has no email, calendar, messaging, storage or web-search connections.</p></div><span className="not-connected-pill">0 connected</span></div><div className="connection-list"><ConnectionCard icon={<Inbox size={17} />} title="Email" detail="Read, draft and send mail after approval" /><ConnectionCard icon={<CalendarClock size={17} />} title="Calendar" detail="Review availability and create approved events" /><ConnectionCard icon={<MessageSquare size={17} />} title="Messaging" detail="Draft messages and send only after approval" /><ConnectionCard icon={<Files size={17} />} title="Files" detail="Select, summarize and edit files you choose" /></div><p className="connection-disclosure"><ShieldCheck size={14} /> These are examples of future integrations, not active permissions. Nothing is connected or being accessed.</p></section>}
+
+          {section === 'files' && <section className="page-view"><PageHeader icon={<Files size={19} />} eyebrow="YOUR DOCUMENTS" title="Files" description="A place for files you choose to bring into a task." /><FeatureState icon={<Files size={21} />} title="File access isn’t available yet" description="This prototype can’t browse, upload, read or change your files. You can still create a local plan for a task that involves a document, but Forge won’t see the document itself." action={<button className="secondary-button" onClick={() => { setSection('chat'); setCurrentPlanId('') }}>Create a local plan <ArrowRight size={14} /></button>} /></section>}
+
+          {section === 'history' && historyTab === 'activity' && <section className="page-view"><PageHeader icon={<History size={19} />} eyebrow="TRANSPARENCY" title="Task history" description="A clear record of local plans, approvals and outcomes." /><HistoryTabs active={historyTab} onChange={setHistoryTab} />
             <div className="audit-notice"><ShieldCheck size={17} /><span>Activity shows request/task details from records still saved on this device. Delete a plan to remove those details; its generic approval and outcome history remains. Export first if you want to keep a detailed copy.</span></div>
             {activity.length ? <div className="timeline">{activity.map((event) => <article className="timeline-item" key={event.id}><div className={`timeline-dot ${event.eventType.includes('failed') ? 'failed' : ''}`} /><div className="timeline-card"><div className="timeline-header"><strong>{event.summary}</strong><time>{formatDate(event.occurredAt)}</time></div>{event.context && <p className="event-context">{event.context}</p>}{event.detailsRemoved && <span className="event-redacted"><LockKeyhole size={12} /> Details removed</span>}<span className="event-kind">{event.eventType.replaceAll('.', ' · ')}</span></div></article>)}</div> : <EmptyState icon={<Activity size={20} />} title="Nothing has happened yet" text="Once you draft a plan, this timeline will show it here." />}
           </section>}
@@ -360,8 +416,18 @@ function App() {
 }
 
 function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApprove, onDeny, onExecute }: { plan: Plan; loading: boolean; hasUnsavedEdits: boolean; onTitleChange: (planId: string, stepId: string, value: string) => void; onSave: () => void; onApprove: (stepId: string) => void; onDeny: (stepId: string) => void; onExecute: (stepId: string) => void }) {
+  const createdTasks = plan.steps.filter((step) => step.status === 'done').length
+  const waitingForReview = plan.steps.some((step) => step.status === 'pending')
+  const waitingToRun = plan.steps.some((step) => step.status === 'approved')
+  const allResolved = plan.steps.every((step) => step.status === 'done' || step.status === 'denied')
+  const taskStage = allResolved ? createdTasks ? `${createdTasks} local ${createdTasks === 1 ? 'task' : 'tasks'} created` : 'Declined · no tasks created' : waitingToRun || createdTasks > 0 ? `${createdTasks} of ${plan.steps.length} tasks created` : 'No task has run'
   return (
     <div className="plan-card">
+      <ol className="progress-track" aria-label="Local task progress">
+        <li className="complete"><span className="progress-dot"><Check size={12} /></span><span><strong>Plan ready</strong><small>Local draft</small></span></li>
+        <li className={waitingForReview ? 'active' : 'complete'}><span className="progress-dot">{waitingForReview ? <ShieldCheck size={12} /> : <Check size={12} />}</span><span><strong>{waitingForReview ? 'Your review' : 'Review done'}</strong><small>{waitingForReview ? 'Waiting for you' : 'Choices saved'}</small></span></li>
+        <li className={allResolved ? 'complete' : waitingToRun || createdTasks > 0 ? 'active' : 'pending'}><span className="progress-dot">{allResolved && createdTasks > 0 ? <Check size={12} /> : <ListTodo size={12} />}</span><span><strong>Local task</strong><small>{taskStage}</small></span></li>
+      </ol>
       <div className="plan-card-header">
         <div>
           <div className="plan-kicker"><Sparkles size={14} /> {plan.generationMode === 'ai' ? 'AI-ASSISTED DRAFT' : 'BASIC LOCAL DRAFT'}</div>
@@ -377,7 +443,7 @@ function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApp
             <div className="step-content">
               <label className="sr-only" htmlFor={`step-${step.id}`}>Task title for step {index + 1}</label>
               <input id={`step-${step.id}`} value={step.taskTitle} maxLength={120} onChange={(event) => onTitleChange(plan.id, step.id, event.target.value)} disabled={step.status === 'done'} />
-              <p>{step.detail}</p>
+              <details className="step-details"><summary>What this step does</summary><p>{step.detail}</p><p>Running this step only adds a task to Forge on this device. It won’t contact an external service.</p></details>
               {step.status === 'approved' && step.expiresAt && <span className="approval-expiry"><Clock3 size={13} /> Approved until {formatDate(step.expiresAt)}</span>}
               {step.status === 'denied' && <span className="denied-note">Declined. No task was created.</span>}
             </div>
@@ -398,6 +464,21 @@ function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApp
       </div>
     </div>
   )
+}
+
+function HistoryTabs({ active, onChange }: { active: HistoryTab; onChange: (tab: HistoryTab) => void }) {
+  const tabs: Array<{ id: HistoryTab; label: string }> = [
+    { id: 'plans', label: 'Plans' }, { id: 'tasks', label: 'Tasks' }, { id: 'activity', label: 'Activity' },
+  ]
+  return <div className="history-tabs" role="tablist" aria-label="Task history type">{tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={active === tab.id} className={active === tab.id ? 'active' : ''} onClick={() => onChange(tab.id)}>{tab.label}</button>)}</div>
+}
+
+function FeatureState({ icon, title, description, action }: { icon: ReactNode; title: string; description: string; action?: ReactNode }) {
+  return <div className="feature-state"><span className="feature-state-icon">{icon}</span><span className="feature-state-label">NOT ACTIVE IN THIS PROTOTYPE</span><h2>{title}</h2><p>{description}</p>{action}</div>
+}
+
+function ConnectionCard({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
+  return <article className="connection-card"><span className="connection-card-icon">{icon}</span><span className="connection-card-copy"><strong>{title}</strong><span>{detail}</span></span><span className="not-connected-pill">Not connected</span></article>
 }
 
 function PageHeader({ icon, eyebrow, title, description, action }: { icon: ReactNode; eyebrow: string; title: string; description: string; action?: ReactNode }) {
