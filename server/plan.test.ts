@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { actionHash, draftPlan } from './plan.js'
 
-test('local plan drafting is bounded and labels its generation source', async () => {
+test('local plan drafting is bounded, local-only and labels its generation source', async () => {
   const plan = await draftPlan('Prepare proposal; review final copy.')
   assert.equal(plan.generationMode, 'local_parser')
   assert.equal(plan.steps.length, 2)
   assert.equal(plan.steps[0].taskTitle, 'Prepare proposal')
   assert.equal(plan.steps[1].taskTitle, 'review final copy')
   assert.equal(plan.steps[0].status, 'pending')
+  assert.ok(plan.steps.every((step) => step.kind === 'create_task'))
   assert.equal(plan.steps[0].actionHash, actionHash(plan.id, plan.steps[0]))
 })
 

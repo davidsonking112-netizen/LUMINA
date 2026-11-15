@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { after } from 'node:test'
 import supertest from 'supertest'
+import type { PlanStep } from '../src/types.js'
 
 const testDir = mkdtempSync(join(tmpdir(), 'forge-api-test-'))
 process.env.FORGE_DB_PATH = join(testDir, 'forge.sqlite')
@@ -49,6 +50,21 @@ test('cross-origin form requests cannot approve or execute a task', async () => 
   await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set({ ...trustedHeaders, Host: 'attacker.example' }).send({}).expect(403)
   await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set({ Host: '127.0.0.1:8787', 'X-Forge-Request': '1' }).send({}).expect(403)
 
+  const unchanged = await request(app).get(`/api/plans/${plan.id}`).expect(200)
+  assert.equal(unchanged.body.steps[0].status, 'pending')
+  assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
+})
+
+test('unconnected action types cannot be approved or executed even if a saved plan is altered', async () => {
+  const created = await request(app).post('/api/plans').send({ request: 'Prepare a safe local task.' }).expect(201)
+  const plan = created.body as { id: string; steps: Array<{ id: string; status: string }> }
+  const row = db.prepare('SELECT steps_json FROM plans WHERE id = ?').get(plan.id) as { steps_json: string }
+  const steps = JSON.parse(row.steps_json) as PlanStep[]
+  steps[0].kind = 'send_email'
+  db.prepare('UPDATE plans SET steps_json = ? WHERE id = ?').run(JSON.stringify(steps), plan.id)
+
+  await request(app).post(`/api/plans/${plan.id}/steps/${steps[0].id}/approve`).expect(403)
+  await request(app).post(`/api/plans/${plan.id}/steps/${steps[0].id}/execute`).expect(403)
   const unchanged = await request(app).get(`/api/plans/${plan.id}`).expect(200)
   assert.equal(unchanged.body.steps[0].status, 'pending')
   assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)

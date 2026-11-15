@@ -1,4 +1,4 @@
-import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
+import type { AuditEvent, Automation, Connector, DocumentAsset, ForgeTask, MemoryEntry, Plan, ResearchReport } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -21,6 +21,12 @@ export const api = {
   plans: () => request<Plan[]>('/api/plans'),
   activity: () => request<AuditEvent[]>('/api/activity'),
   memories: () => request<MemoryEntry[]>('/api/memories'),
+  capabilities: () => request<{ permissionModes: Array<{ id: string; label: string; description: string }>; inputModes: string[]; actionKinds: string[] }>('/api/capabilities'),
+  automations: () => request<Automation[]>('/api/automations'),
+  toggleAutomation: (id: string, enabled: boolean) => request<Automation>(`/api/automations/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  documents: () => request<DocumentAsset[]>('/api/documents'),
+  connectors: () => request<Connector[]>('/api/connectors'),
+  research: (question: string) => request<ResearchReport>('/api/research', { method: 'POST', body: JSON.stringify({ question }) }),
   draftPlan: (text: string) => request<Plan>('/api/plans', { method: 'POST', body: JSON.stringify({ request: text }) }),
   updatePlan: (id: string, steps: Array<{ id: string; taskTitle: string }>) => request<Plan>(`/api/plans/${id}`, { method: 'PUT', body: JSON.stringify({ steps }) }),
   deletePlan: (id: string) => request<void>(`/api/plans/${id}`, { method: 'DELETE' }),
