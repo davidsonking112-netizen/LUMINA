@@ -501,3 +501,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 
 .settings-card p { color: #626b7a; }
 .settings-status, .settings-status:not(:has(.source-dot)) { color: #3d7155; font-size: 9px; }
+.active-task-status { flex: none; padding: 5px 8px; border-radius: 99px; color: #4f596a; background: #eef0f4; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.active-task-status.draft { color: #59649d; background: #eef0ff; }
+.active-task-status.in_progress { color: #8a5b19; background: #fff4df; }
+.active-task-status.completed { color: #296b4a; background: #e8f7ef; }
+.task-header-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 8px; border: 1px solid #e6e8ee; border-radius: 7px; color: #4f596a; background: #fff; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.task-header-action:hover { background: #f7f8fc; border-color: #cfd4e7; }
+.breadcrumb-current { max-width: min(42vw, 520px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 680px) {
+  .topbar-left { min-width: 0; flex: 1; overflow: hidden; }
+  .topbar-right { flex: none; gap: 4px; }
+  .connection-pill, .help-button { display: none; }
+  .task-header-action { width: 30px; height: 30px; padding: 0; }
+  .task-header-action span { display: none; }
+  .breadcrumb-current { max-width: 38vw; }
+}

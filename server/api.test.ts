@@ -70,6 +70,24 @@ test('unconnected action types cannot be approved or executed even if a saved pl
   assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
 })
 
+test('unconnected services stay inactive and unsupported workflows do not return success', async () => {
+  const capabilities = await request(app).get('/api/capabilities').expect(200)
+  assert.deepEqual(capabilities.body.inputModes, ['text'])
+  assert.deepEqual(capabilities.body.actionKinds, ['create_task'])
+  assert.equal(capabilities.body.streaming, false)
+
+  const connectors = (await request(app).get('/api/connectors').expect(200)).body as Array<{ status: string; scopes: string[] }>
+  assert.ok(connectors.length > 0)
+  assert.ok(connectors.every((connector) => connector.status === 'coming_soon' && connector.scopes.length === 0))
+  assert.deepEqual((await request(app).get('/api/documents').expect(200)).body, [])
+  assert.deepEqual((await request(app).get('/api/automations').expect(200)).body, [])
+
+  const activityBefore = (await request(app).get('/api/activity').expect(200)).body.length
+  await request(app).post('/api/automations/morning-briefing/toggle').send({ enabled: true }).expect(501)
+  await request(app).post('/api/research').send({ question: 'Compare recent market trends.' }).expect(501)
+  assert.equal((await request(app).get('/api/activity').expect(200)).body.length, activityBefore)
+})
+
 test('approval is required, edits invalidate it, and retries never create duplicate tasks', async () => {
   const created = await request(app).post('/api/plans').send({ request: 'Prepare proposal; review final copy.' }).expect(201)
   const plan = created.body as { id: string; request: string; generationMode: string; status: string; steps: Array<{ id: string; taskTitle: string; status: string; expiresAt?: string; approvalId?: string }> }

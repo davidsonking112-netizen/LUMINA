@@ -7,13 +7,13 @@ Forge is Davids’s personal agent workspace. This repository is a greenfield bu
 This is a local, single-device clickable prototype. Its working screens and flows are:
 
 - Home dashboard with sample quick starts that prefill a local task plan, plus recent local tasks and activity.
-- New Task flow: enter a request, review a plan, edit exact task titles, approve or decline each local task-creation action, then run an approved step.
+- New Task flow: enter a request, review a plan, edit exact task titles, approve or decline each local task-creation action, then run an approved step. The active task title, status, and history/new-task actions stay in the header.
 - Task history with Plans, Tasks, and Activity tabs; saved plans and tasks can be searched and managed.
 - Memory where the owner can add, edit, and forget owner-authored notes.
 - Settings with privacy information, JSON export, and local data clearing.
 - Desktop sidebar collapse/expand, narrow-screen navigation drawer, task-details drawer, Escape-to-close behavior, and a Ctrl/⌘+K new-task shortcut.
 
-The prototype also has clickable Inbox, Projects, Automations, Connected Apps, and Files screens. They clearly say what is not active and do not simulate access to external services. Attachment and voice buttons are visible but disabled. Quick-start prompts only prefill local plans; they do not run automatically.
+The prototype also has clickable Inbox, Projects, Automations, Connected Apps, and Files screens. They clearly say what is not active and do not simulate access to external services. Attachment and voice buttons are visible but disabled. Quick-start prompts only prefill local plans; they do not run automatically. Responses arrive as a single completed draft; streaming is not implemented. The loading indicator is only a wait state, not live progress from a running agent. Mobile drawers move focus inside, keep Tab navigation contained, hide inactive background controls, and return focus to their trigger when closed.
 
 Plan edits invalidate earlier approvals. The server checks the current action hash and approval expiry immediately before execution. Approval expires after 10 minutes. A plan is completed when every step is either run or declined; each step still shows its own outcome. Local task creation is idempotent, so retrying after a lost response does not create a duplicate. Activity details are looked up from saved plans and scrubbed from view after deletion, while generic approval/outcome entries remain. Database row deletion is not guaranteed secure erasure.
 
@@ -23,7 +23,7 @@ Without a model configured, plan suggestions use a simple local parser. If all t
 
 ## Not connected yet
 
-Email, calendars, messaging, web search, monitoring, schedules, event triggers, file import/transformation, voice and image input are not connected. Memory notes are editable and stored locally, but are not yet used to personalize plans. Do not store passwords, payment data, or sensitive secrets here.
+Email, calendars, messaging, web search, monitoring, schedules, event triggers, file import/transformation, voice and image input are not connected. Their API states stay inactive and unsupported workflow calls return an unavailable response. Memory notes are editable and stored locally, but are not yet used to personalize plans. Do not store passwords, payment data, or sensitive secrets here.
 
 The API and Vite development server bind to `127.0.0.1`. This build has no sign-in, cloud sync, encryption-at-rest, or production deployment configuration. Do not expose it to the public internet. A hosted release needs authentication, encrypted storage, backups/retention controls, deployment hardening, and the owner’s choice of first service provider before those features are added.
 

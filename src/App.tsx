@@ -35,6 +35,26 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+function trapDrawerTab(event: globalThis.KeyboardEvent, drawer: HTMLElement | null) {
+  if (event.key !== 'Tab' || !drawer) return
+  const focusable = Array.from(drawer.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+    .filter((element) => element.getClientRects().length > 0)
+  if (!focusable.length) {
+    event.preventDefault()
+    drawer.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (document.activeElement === first || !drawer.contains(document.activeElement))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (document.activeElement === last || !drawer.contains(document.activeElement))) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 function App() {
   const [section, setSection] = useState<Section>('home')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -58,6 +78,10 @@ function App() {
   const [memoryContent, setMemoryContent] = useState('')
   const [memoryBusy, setMemoryBusy] = useState(false)
   const requestInputRef = useRef<HTMLTextAreaElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const taskDetailsRef = useRef<HTMLElement>(null)
+  const menuToggleRef = useRef<HTMLButtonElement>(null)
+  const contextToggleRef = useRef<HTMLButtonElement>(null)
 
   const currentPlan = plans.find((plan) => plan.id === currentPlanId)
   const filteredTasks = useMemo(() => tasks.filter((task) => task.title.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())), [tasks, searchText])
@@ -107,6 +131,32 @@ function App() {
     window.addEventListener('keydown', handleGlobalKeys)
     return () => window.removeEventListener('keydown', handleGlobalKeys)
   }, [memoryDialog])
+
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    const restoreFocus = menuToggleRef.current
+    const closeButton = sidebarRef.current?.querySelector<HTMLElement>('.mobile-close')
+    closeButton?.focus()
+    function containTab(event: globalThis.KeyboardEvent) { trapDrawerTab(event, sidebarRef.current) }
+    document.addEventListener('keydown', containTab)
+    return () => {
+      document.removeEventListener('keydown', containTab)
+      if (restoreFocus?.isConnected) window.requestAnimationFrame(() => restoreFocus.focus())
+    }
+  }, [mobileNavOpen])
+
+  useEffect(() => {
+    if (!mobileContextOpen || !window.matchMedia('(max-width: 680px)').matches) return
+    const restoreFocus = contextToggleRef.current
+    const closeButton = taskDetailsRef.current?.querySelector<HTMLElement>('.context-drawer-header button')
+    closeButton?.focus()
+    function containTab(event: globalThis.KeyboardEvent) { trapDrawerTab(event, taskDetailsRef.current) }
+    document.addEventListener('keydown', containTab)
+    return () => {
+      document.removeEventListener('keydown', containTab)
+      if (restoreFocus?.isConnected) window.requestAnimationFrame(() => restoreFocus.focus())
+    }
+  }, [mobileContextOpen])
 
   async function createPlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -297,11 +347,13 @@ function App() {
     }
   }
 
-  const title = section === 'chat' ? 'New task' : navigation.find((item) => item.id === section)?.label ?? 'Home'
+  const mobileViewport = window.matchMedia('(max-width: 680px)').matches
+  const title = section === 'chat' ? currentPlan?.request ?? 'New task' : navigation.find((item) => item.id === section)?.label ?? 'Home'
+  const taskStatus = currentPlan?.status === 'draft' ? 'Draft' : currentPlan?.status === 'in_progress' ? 'In progress' : currentPlan?.status === 'completed' ? 'Completed' : ''
 
   return (
     <div className={`app-shell ${desktopNavCollapsed ? 'nav-collapsed' : ''}`}>
-      <aside className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''} ${desktopNavCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="Main navigation">
+      <aside ref={sidebarRef} className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''} ${desktopNavCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="Main navigation" aria-hidden={mobileViewport && !mobileNavOpen} inert={mobileViewport && !mobileNavOpen}>
         <div className="brand-row">
           <div className="brand-mark" aria-hidden="true"><span>F</span><i /></div>
           <div className="brand-copy"><strong>Forge</strong><span>Personal agent</span></div>
@@ -322,12 +374,12 @@ function App() {
         </div>
       </aside>
 
-      {mobileNavOpen && <button className="mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
+      {mobileNavOpen && <button className="mobile-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMobileNavOpen(false)} />}
 
-      <main className="main-shell">
-        <header className="topbar">
-          <div className="topbar-left"><button className="icon-button menu-button" aria-label={window.matchMedia('(max-width: 680px)').matches ? mobileNavOpen ? 'Close navigation' : 'Open navigation' : desktopNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={window.matchMedia('(max-width: 680px)').matches ? mobileNavOpen : !desktopNavCollapsed} onClick={() => { if (window.matchMedia('(max-width: 680px)').matches) setMobileNavOpen((open) => !open); else setDesktopNavCollapsed((collapsed) => !collapsed) }}><span className="mobile-menu-icon"><Menu size={19} /></span><span className="desktop-menu-icon">{desktopNavCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</span></button><span className="breadcrumb">Workspace</span><ArrowRight size={14} className="breadcrumb-arrow" /><span className="breadcrumb-current">{title}</span></div>
-          <div className="topbar-right"><span className={`connection-pill ${ready ? 'online' : 'offline'}`}><i />{ready ? 'Local service connected' : 'Connecting'}</span><button className="help-button" aria-label="About this prototype" onClick={() => setSection('settings')}><CircleHelp size={18} /></button></div>
+      <main className="main-shell" aria-hidden={mobileViewport && mobileNavOpen} inert={mobileViewport && mobileNavOpen}>
+        <header className="topbar" aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen}>
+          <div className="topbar-left"><button ref={menuToggleRef} className="icon-button menu-button" aria-label={mobileViewport ? mobileNavOpen ? 'Close navigation' : 'Open navigation' : desktopNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={mobileViewport ? mobileNavOpen : !desktopNavCollapsed} onClick={() => { if (mobileViewport) setMobileNavOpen((open) => !open); else setDesktopNavCollapsed((collapsed) => !collapsed) }}><span className="mobile-menu-icon"><Menu size={19} /></span><span className="desktop-menu-icon">{desktopNavCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</span></button><span className="breadcrumb">Workspace</span><ArrowRight size={14} className="breadcrumb-arrow" /><span className="breadcrumb-current" title={title}>{title}</span></div>
+          <div className="topbar-right">{section === 'chat' && currentPlan && <><span className={`active-task-status ${currentPlan.status}`} aria-label={`Task status: ${taskStatus}`}>{taskStatus}</span><button className="task-header-action" aria-label="Open task history" title="Open task history" onClick={() => { setHistoryTab('plans'); setSection('history') }}><History size={15} /><span>History</span></button><button className="task-header-action" aria-label="Start a new task" title="Start a new task" onClick={() => { setCurrentPlanId(''); setDraft(''); setSection('chat'); window.requestAnimationFrame(() => requestInputRef.current?.focus()) }}><SquarePen size={15} /><span>New task</span></button></>}<span className={`connection-pill ${ready ? 'online' : 'offline'}`}><i />{ready ? 'Local service connected' : 'Connecting'}</span><button className="help-button" aria-label="About this prototype" onClick={() => setSection('settings')}><CircleHelp size={18} /></button></div>
         </header>
 
         <div className="main-scroll">
@@ -345,7 +397,7 @@ function App() {
             <div className="dashboard-honesty"><LockKeyhole size={15} /><span>This prototype only creates and manages plans and tasks on this device. Connected services and automations are not active.</span></div>
           </section>}
           {section === 'chat' && <section className="chat-layout">
-            <div className="chat-column">
+            <div className="chat-column" aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen}>
               <div className="chat-heading"><div className="forge-orb"><Sparkles size={20} /></div><div><p className="eyebrow">YOUR PERSONAL AGENT</p><h1>What’s on your mind?</h1><p className="heading-subtitle">Tell Forge what you need to get done. You’ll see the plan before anything happens.</p></div></div>
               {currentPlan ? <div className="conversation-block">
                 <div className="message-bubble user-bubble"><span className="message-label">YOU</span><p>{currentPlan.request}</p></div>
@@ -356,11 +408,11 @@ function App() {
                 <textarea ref={requestInputRef} id="request" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Ask Forge to help with something…" rows={3} />
                 <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Actions wait for your approval.</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Plan it</span></button></div></div>
               </form>
-              <p className="prototype-note">Without a model provider, plans use simple local parsing. With one configured, your request text is sent there to draft a plan. This build creates local tasks only; email, calendar, web, voice and file actions aren’t connected.</p>
+              <p className="prototype-note">Drafting returns one completed response; streaming isn’t implemented yet. Without a model provider, plans use simple local parsing. With one configured, your request text is sent there to draft a plan. This build creates local tasks only; email, calendar, web, voice and file actions aren’t connected.</p>
             </div>
-            <button className="context-toggle" aria-label="Open task details" aria-expanded={mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /> Task details</button>
-            {mobileContextOpen && <button className="context-backdrop" aria-label="Close task details" onClick={() => setMobileContextOpen(false)} />}
-            <aside className={`right-rail ${mobileContextOpen ? 'context-open' : ''}`} aria-label="Task details" role="complementary"><div className="context-drawer-header"><strong>Task details</strong><button className="icon-button" aria-label="Close task details" onClick={() => setMobileContextOpen(false)}><X size={17} /></button></div><div className="rail-card"><div className="rail-card-heading"><div className="rail-icon"><ShieldCheck size={17} /></div><strong>Your control comes first</strong></div><p>Review each action before it runs. Editing a plan clears any earlier approval.</p><div className="rail-divider" /><div className="rail-meta-row"><span>Current mode</span><strong>Review every action</strong></div><div className="rail-meta-row"><span>Approval window</span><strong>10 minutes</strong></div></div><div className="rail-card"><div className="quick-card-title"><FileText size={16} /><strong>Sources & files</strong></div><div className="rail-meta-row"><span>Sources</span><strong>None in this draft</strong></div><div className="rail-meta-row"><span>Files</span><strong>Not attached</strong></div></div><div className="rail-card quick-card"><div className="quick-card-title"><Clock3 size={16} /><strong>Today so far</strong></div><div className="quick-stats"><div><strong>{tasks.length}</strong><span>tasks</span></div><div><strong>{activity.length}</strong><span>activity events</span></div></div><button className="text-link" onClick={() => { setHistoryTab('activity'); setSection('history'); setMobileContextOpen(false) }}>View activity <ArrowRight size={14} /></button></div><div className="rail-disclosure"><LockKeyhole size={14} /><span>This prototype stores data locally on this device. Don’t save secrets here.</span></div></aside>
+            <button ref={contextToggleRef} className="context-toggle" aria-label="Open task details" aria-expanded={mobileContextOpen} aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /> Task details</button>
+            {mobileContextOpen && <button className="context-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMobileContextOpen(false)} />}
+            <aside ref={taskDetailsRef} className={`right-rail ${mobileContextOpen ? 'context-open' : ''}`} aria-label="Task details" role={mobileViewport ? 'dialog' : 'complementary'} aria-modal={mobileViewport && mobileContextOpen ? true : undefined} aria-hidden={mobileViewport && !mobileContextOpen} inert={mobileViewport && !mobileContextOpen}><div className="context-drawer-header"><strong>Task details</strong><button className="icon-button" aria-label="Close task details" onClick={() => setMobileContextOpen(false)}><X size={17} /></button></div><div className="rail-card"><div className="rail-card-heading"><div className="rail-icon"><ShieldCheck size={17} /></div><strong>Your control comes first</strong></div><p>Review each action before it runs. Editing a plan clears any earlier approval.</p><div className="rail-divider" /><div className="rail-meta-row"><span>Current mode</span><strong>Review every action</strong></div><div className="rail-meta-row"><span>Approval window</span><strong>10 minutes</strong></div></div><div className="rail-card"><div className="quick-card-title"><FileText size={16} /><strong>Sources & files</strong></div><div className="rail-meta-row"><span>Sources</span><strong>None in this draft</strong></div><div className="rail-meta-row"><span>Files</span><strong>Not attached</strong></div></div><div className="rail-card quick-card"><div className="quick-card-title"><Clock3 size={16} /><strong>Today so far</strong></div><div className="quick-stats"><div><strong>{tasks.length}</strong><span>tasks</span></div><div><strong>{activity.length}</strong><span>activity events</span></div></div><button className="text-link" onClick={() => { setHistoryTab('activity'); setSection('history'); setMobileContextOpen(false) }}>View activity <ArrowRight size={14} /></button></div><div className="rail-disclosure"><LockKeyhole size={14} /><span>This prototype stores data locally on this device. Don’t save secrets here.</span></div></aside>
           </section>}
 
           {section === 'history' && historyTab === 'tasks' && <section className="page-view"><PageHeader icon={<History size={19} />} eyebrow="YOUR WORKSPACE" title="Task history" description="Search and manage the local work Forge has completed or saved." /><HistoryTabs active={historyTab} onChange={setHistoryTab} />
