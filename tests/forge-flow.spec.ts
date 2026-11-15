@@ -12,7 +12,7 @@ test('plan review, exact approval, task execution, export and deletion history w
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations.filter((violation) => violation.impact === 'critical' || violation.impact === 'serious')).toEqual([])
   await page.getByLabel('Message Forge').fill(requestText)
-  await page.getByRole('button', { name: 'Plan it' }).click()
+  await page.getByRole('button', { name: 'Start task' }).click()
 
   await expect(page.getByText('BASIC LOCAL DRAFT')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(2)

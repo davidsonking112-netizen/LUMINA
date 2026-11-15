@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type 
 import {
   Activity, ArrowDown, ArrowRight, BookOpen, CalendarClock, Check, CheckCheck,
   CircleHelp, Clock3, FileText, FileSearch, FolderOpen, Globe2, LoaderCircle, LockKeyhole, Menu, MessageSquare,
-  ListTodo, MoreHorizontal, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen,
+  ListTodo, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Sparkles, SquarePen,
   Trash2, Upload, Workflow, X,
 } from 'lucide-react'
 import { api } from './api'
 import type { AuditEvent, Automation, Connector, DocumentAsset, ForgeTask, MemoryEntry, Plan, ResearchReport } from './types'
 import './App.css'
 import './feature.css'
+import './visual-refresh.css'
 
 type Section = 'chat' | 'plans' | 'tasks' | 'memory' | 'activity' | 'automations' | 'library' | 'research' | 'connectors' | 'settings'
 type Toast = { id: number; text: string; kind: 'success' | 'error' }
@@ -337,11 +338,16 @@ function App() {
               {currentPlan ? <div className="conversation-block">
                 <div className="message-bubble user-bubble"><span className="message-label">YOU</span><p>{currentPlan.request}</p></div>
                 <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><strong>Forge</strong><span>Plan draft · no action has run</span></div><PlanCard plan={currentPlan} loading={loading} hasUnsavedEdits={dirtyPlanIds.has(currentPlan.id)} onTitleChange={updateStepTitle} onSave={() => void savePlan(currentPlan)} onApprove={(stepId) => void approveStep(currentPlan, stepId)} onDeny={(stepId) => void denyStep(currentPlan, stepId)} onExecute={(stepId) => void executeStep(currentPlan, stepId)} /></div></div>
-              </div> : <div className="empty-prompt"><div className="empty-prompt-icon"><MessageSquare size={19} /></div><p>Start with one thing you want to move forward.</p><span>Forge will turn it into a clear, editable plan first.</span></div>}
+              </div> : <>
+                <div className="empty-prompt"><div className="empty-prompt-icon"><Sparkles size={19} /></div><p>Give Forge a goal, not a command.</p><span>It will think through the steps, show you the plan, and wait before anything important happens.</span></div>
+                <div className="quick-starts"><div className="quick-start-heading"><span>Try a starting point</span><span>or write your own below</span></div><div className="quick-start-grid">
+                  {[['Prepare my day', 'Create a morning briefing with priorities, meetings and follow-ups.'], ['Turn notes into work', 'Turn my meeting notes into clear tasks and a short decision summary.'], ['Research a topic', 'Compare the latest information on a topic and cite every source.']].map(([label, prompt]) => <button className="quick-start-card" key={label} onClick={() => { setDraft(prompt); document.getElementById('request')?.focus() }}><span className="quick-start-icon"><Sparkles size={14} /></span><span><strong>{label}</strong><small>{prompt}</small></span><ArrowRight size={15} /></button>)}
+                </div></div>
+              </>}
               <form className="composer" onSubmit={createPlan}>
                 <label className="sr-only" htmlFor="request">Message Forge</label>
                 <textarea id="request" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Ask Forge to help with something…" rows={3} />
-                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Actions wait for your approval.</span></div><div className="composer-actions"><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Plan it</span></button></div></div>
+                <div className="composer-footer"><div className="composer-tools"><button type="button" aria-label="Add attachment" onClick={() => toast('File input is ready for the local workspace adapter.')}>＋</button><span className="composer-mode"><Sparkles size={13} /> Forge plans first</span></div><div className="composer-actions"><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <ArrowRight size={16} />}<span>Start task</span></button></div></div>
               </form>
               <p className="prototype-note">Without a model provider, plans use simple local parsing. With one configured, your request text is sent there to draft a plan. This build creates local tasks only; email, calendar, web, voice and file actions aren’t connected.</p>
             </div>
