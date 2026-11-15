@@ -14,6 +14,8 @@ This is a local, single-device prototype. It demonstrates one end-to-end flow:
 
 Plan edits invalidate earlier approvals. The server checks the current action hash and approval expiry immediately before execution. A plan is completed when every step is either run or declined; each step still shows its own outcome. Local task creation is idempotent, so retrying after a lost response does not create a duplicate. Activity details are looked up from saved plans and scrubbed from view after deletion, while generic approval/outcome entries remain. Database row deletion is not guaranteed secure erasure.
 
+The API rejects mutation requests unless the Host and Origin are allowlisted, Fetch Metadata is same-origin, and the JSON request includes the non-simple `X-Forge-Request: 1` header. The browser test suite includes a hostile-origin HTML-form regression. This is defense in depth for the local prototype, not a substitute for authentication or deployment hardening.
+
 Without a model configured, plan suggestions use a simple local parser. If all three `FORGE_LLM_*` values are set in `.env`, the original request text is sent over HTTPS to that OpenAI-compatible provider to draft task titles. HTTP is rejected unless a developer explicitly enables the loopback-only development exception. The model can only suggest local checklist items; it cannot invoke tools or perform external actions.
 
 ## Not connected yet
@@ -50,6 +52,7 @@ Configure all three or leave all blank. When configured, request text is sent to
 npm test
 npm run build
 npm run lint
-npm run dev # in one terminal, for the browser test
 npm run test:e2e
 ```
+
+The Playwright configuration starts a separate local app and isolated test database for browser tests.

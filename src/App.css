@@ -368,3 +368,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .plan-kicker { color: #5362c2; }
 .plan-card-header > div > p, .step-content > p, .plan-card-footer > span { color: #626b7a; }
 .complete-label { color: #2d8057; }
+.plan-status.draft { color: #626b7a; }

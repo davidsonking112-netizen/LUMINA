@@ -33,7 +33,8 @@ test('plan review, exact approval, task execution, export and deletion history w
 
   await page.getByRole('button', { name: 'Plans' }).click()
   page.once('dialog', (dialog) => void dialog.accept())
-  await page.getByRole('button', { name: 'Delete plan and linked local tasks' }).click()
+  const savedPlan = page.getByRole('article').filter({ hasText: requestText })
+  await savedPlan.getByRole('button', { name: 'Delete plan and linked local tasks' }).click()
   await expect(page.getByText('Plan and linked local tasks deleted. Generic activity entries were retained.')).toBeVisible()
   await page.getByRole('button', { name: 'Activity' }).click()
   await expect(page.getByText('Details removed').first()).toBeVisible()

@@ -7,6 +7,35 @@ import type { AuditEvent, ForgeTask, MemoryEntry, Plan, PlanStep } from '../src/
 
 const app = express()
 const APPROVAL_TTL_MS = 10 * 60 * 1000
+app.disable('x-powered-by')
+
+const port = process.env.PORT ?? '8787'
+const allowedHosts = new Set((process.env.FORGE_ALLOWED_HOSTS ?? `127.0.0.1:${port},localhost:${port}`)
+  .split(',').map((value) => value.trim().toLowerCase()).filter(Boolean))
+const allowedOrigins = new Set((process.env.FORGE_ALLOWED_ORIGINS ?? 'http://127.0.0.1:5173,http://localhost:5173')
+  .split(',').map((value) => value.trim()).filter(Boolean))
+const mutationMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+app.use('/api', (req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Cache-Control', 'no-store')
+  const host = req.get('host')?.toLowerCase()
+  if (!host || !allowedHosts.has(host)) return jsonError(res, 403, 'This host is not allowed to access Forge.')
+
+  const origin = req.get('origin')
+  if (origin && !allowedOrigins.has(origin)) return jsonError(res, 403, 'This origin is not allowed to access Forge.')
+  if (!mutationMethods.has(req.method)) return next()
+  if (!origin || !allowedOrigins.has(origin)) return jsonError(res, 403, 'A trusted same-origin request is required.')
+
+  const fetchSite = req.get('sec-fetch-site')
+  if (fetchSite !== 'same-origin') {
+    return jsonError(res, 403, 'Cross-origin requests cannot change Forge data.')
+  }
+  if (req.get('x-forge-request') !== '1') return jsonError(res, 403, 'The Forge request header is required.')
+  const contentType = req.get('content-type')
+  if (contentType && !/^application\/json(?:\s*;|$)/i.test(contentType)) return jsonError(res, 415, 'Forge API changes require a JSON request.')
+  next()
+})
 app.use(express.json({ limit: '32kb' }))
 
 const requestSchema = z.object({ request: z.string().trim().min(2).max(2000) })

@@ -3,7 +3,7 @@ import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Content-Type': 'application/json', 'X-Forge-Request': '1', ...init?.headers },
   })
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { error?: string }

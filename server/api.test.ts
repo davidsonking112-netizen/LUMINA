@@ -3,16 +3,55 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { after } from 'node:test'
-import request from 'supertest'
+import supertest from 'supertest'
 
 const testDir = mkdtempSync(join(tmpdir(), 'forge-api-test-'))
 process.env.FORGE_DB_PATH = join(testDir, 'forge.sqlite')
 const { app } = await import('./index.js')
 const { db } = await import('./db.js')
 
+const sameOriginHeaders = {
+  Host: '127.0.0.1:8787',
+  Origin: 'http://127.0.0.1:5173',
+  'Sec-Fetch-Site': 'same-origin',
+}
+const trustedHeaders = {
+  ...sameOriginHeaders,
+  'X-Forge-Request': '1',
+}
+const request = (target: typeof app) => ({
+  get: (path: string) => supertest(target).get(path).set(trustedHeaders),
+  post: (path: string) => supertest(target).post(path).set(trustedHeaders),
+  put: (path: string) => supertest(target).put(path).set(trustedHeaders),
+  delete: (path: string) => supertest(target).delete(path).set(trustedHeaders),
+})
+
 after(() => {
   db.close()
   rmSync(testDir, { recursive: true, force: true })
+})
+
+test('cross-origin form requests cannot approve or execute a task', async () => {
+  const created = await request(app).post('/api/plans').send({ request: 'Check the origin boundary.' }).expect(201)
+  const plan = created.body as { id: string; steps: Array<{ id: string; status: string }> }
+  const stepId = plan.steps[0].id
+  const browserFormHeaders = {
+    Host: '127.0.0.1:8787',
+    Origin: 'http://attacker.example',
+    'Sec-Fetch-Site': 'cross-site',
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
+
+  await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set(browserFormHeaders).send('approve=true').expect(403)
+  await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/execute`).set(browserFormHeaders).send('execute=true').expect(403)
+  await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set(sameOriginHeaders).send({}).expect(403)
+  await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set({ Host: '127.0.0.1:8787', Origin: 'http://127.0.0.1:5173', 'X-Forge-Request': '1' }).send({}).expect(403)
+  await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set({ ...trustedHeaders, Host: 'attacker.example' }).send({}).expect(403)
+  await supertest(app).post(`/api/plans/${plan.id}/steps/${stepId}/approve`).set({ Host: '127.0.0.1:8787', 'X-Forge-Request': '1' }).send({}).expect(403)
+
+  const unchanged = await request(app).get(`/api/plans/${plan.id}`).expect(200)
+  assert.equal(unchanged.body.steps[0].status, 'pending')
+  assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
 })
 
 test('approval is required, edits invalidate it, and retries never create duplicate tasks', async () => {
