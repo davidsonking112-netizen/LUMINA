@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test, { after } from 'node:test'
 import supertest from 'supertest'
 import type { PlanStep } from '../src/types.js'
+import { actionMayRun, actionRegistry } from './policy.js'
 
 const testDir = mkdtempSync(join(tmpdir(), 'forge-api-test-'))
 process.env.FORGE_DB_PATH = join(testDir, 'forge.sqlite')
@@ -68,6 +69,121 @@ test('unconnected action types cannot be approved or executed even if a saved pl
   const unchanged = await request(app).get(`/api/plans/${plan.id}`).expect(200)
   assert.equal(unchanged.body.steps[0].status, 'pending')
   assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
+})
+
+test('Automatic mode is server-gated to explicit parser tasks and safely replays by request ID', async () => {
+  const keys = ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'] as const
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const previousFetch = globalThis.fetch
+  const previousMode = (await request(app).get('/api/settings').expect(200)).body.permissionMode as string
+  await request(app).delete('/api/data').expect(204)
+  process.env.FORGE_LLM_BASE_URL = 'https://model.example/v1'
+  process.env.FORGE_LLM_API_KEY = 'test-only-secret'
+  process.env.FORGE_LLM_MODEL = 'test-model'
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+    answer: 'Here is the requested answer.',
+    localTasks: ['Model-invented task must not run automatically'],
+  }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  try {
+    assert.equal(actionRegistry.create_task.supported, true)
+    assert.equal(actionRegistry.create_task.riskLevel, 'low')
+    assert.equal(actionRegistry.send_email.supported, false)
+    assert.equal(actionMayRun('create_task', 'automatic', true), true)
+    assert.equal(actionMayRun('send_email', 'automatic', true), false)
+    assert.equal(actionMayRun('unknown_action', 'automatic', true), false)
+
+    const defaultSettings = await request(app).get('/api/settings').expect(200)
+    assert.equal(defaultSettings.body.permissionMode, 'approve')
+    await request(app).put('/api/settings').send({ permissionMode: 'automatic' }).expect(200)
+    assert.equal((await request(app).get('/api/capabilities').expect(200)).body.currentPermissionMode, 'automatic')
+    await request(app).post('/api/plans').send({ request: 'Create a local task to check the missing request ID.' }).expect(400)
+
+    const activityBefore = (await request(app).get('/api/activity').expect(200)).body as Array<{ eventType: string }>
+    for (const [requestId, prompt] of [
+      ['00000000-0000-4000-8000-000000000011', 'Do not create local tasks; just explain the plan.'],
+      ['00000000-0000-4000-8000-000000000012', 'Please don’t create a local task for this.'],
+      ['00000000-0000-4000-8000-000000000013', 'Help me review the plan without creating a task.'],
+    ] as const) {
+      const negated = await request(app).post('/api/plans').send({ request: prompt, requestId }).expect(201)
+      assert.equal(negated.body.steps.length, 0, prompt)
+    }
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
+    const activityAfterNegations = (await request(app).get('/api/activity').expect(200)).body as Array<{ eventType: string }>
+    assert.equal(activityAfterNegations.filter((event) => event.eventType === 'action.auto_succeeded').length, activityBefore.filter((event) => event.eventType === 'action.auto_succeeded').length)
+
+    const explicitRequest = { request: 'Create a local task to review the launch checklist.', requestId: '00000000-0000-4000-8000-000000000014' }
+    const created = await request(app).post('/api/plans').send(explicitRequest).expect(201)
+    assert.equal(created.body.steps[0].provenance, 'user_request_parser')
+    assert.equal(created.body.steps[0].status, 'done')
+    assert.equal(created.body.steps[0].taskTitle, 'review the launch checklist')
+    const tasks = await request(app).get('/api/tasks').expect(200)
+    assert.equal(tasks.body.length, 1)
+    assert.equal(tasks.body[0].title, 'review the launch checklist')
+    assert.notEqual(tasks.body[0].title, 'Model-invented task must not run automatically')
+
+    const replay = await request(app).post('/api/plans').send(explicitRequest).expect(200)
+    assert.equal(replay.body.id, created.body.id)
+    await request(app).post('/api/plans').send({ ...explicitRequest, request: 'Create a local task to send an email.' }).expect(409)
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 1)
+
+    await request(app).put('/api/settings').send({ permissionMode: 'suggest' }).expect(200)
+    const suggested = await request(app).post('/api/plans').send({ request: 'Create a local task to review the next release.', requestId: '00000000-0000-4000-8000-000000000015' }).expect(201)
+    assert.equal(suggested.body.steps[0].status, 'pending')
+    await request(app).post(`/api/plans/${suggested.body.id}/steps/${suggested.body.steps[0].id}/approve`).expect(403)
+    await request(app).post(`/api/plans/${suggested.body.id}/steps/${suggested.body.steps[0].id}/execute`).expect(403)
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 1)
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const key of keys) {
+      const value = previous[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await request(app).put('/api/settings').send({ permissionMode: previousMode }).expect(200)
+    await request(app).delete('/api/data').expect(204)
+  }
+})
+
+test('permission mode changes revoke existing approvals and require a fresh review', async () => {
+  const keys = ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'] as const
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const previousMode = (await request(app).get('/api/settings').expect(200)).body.permissionMode as string
+  for (const key of keys) delete process.env[key]
+  await request(app).delete('/api/data').expect(204)
+  try {
+    await request(app).put('/api/settings').send({ permissionMode: 'approve' }).expect(200)
+    const created = await request(app).post('/api/plans').send({ request: 'Create a local task to review the current release.' }).expect(201)
+    const planId = created.body.id as string
+    const stepId = created.body.steps[0].id as string
+    const approved = await request(app).post(`/api/plans/${planId}/steps/${stepId}/approve`).expect(200)
+    assert.equal(approved.body.steps[0].status, 'approved')
+    assert.ok(approved.body.steps[0].approvalId)
+
+    await request(app).put('/api/settings').send({ permissionMode: 'suggest' }).expect(200)
+    const afterSuggest = await request(app).get(`/api/plans/${planId}`).expect(200)
+    assert.equal(afterSuggest.body.steps[0].status, 'pending')
+    assert.equal(afterSuggest.body.steps[0].approvalId, undefined)
+    assert.equal(afterSuggest.body.steps[0].expiresAt, undefined)
+
+    await request(app).put('/api/settings').send({ permissionMode: 'approve' }).expect(200)
+    const afterReturn = await request(app).get(`/api/plans/${planId}`).expect(200)
+    assert.equal(afterReturn.body.steps[0].status, 'pending')
+    await request(app).post(`/api/plans/${planId}/steps/${stepId}/execute`).expect(403)
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
+
+    await request(app).post(`/api/plans/${planId}/steps/${stepId}/approve`).expect(200)
+    const executed = await request(app).post(`/api/plans/${planId}/steps/${stepId}/execute`).expect(200)
+    assert.equal(executed.body.plan.steps[0].status, 'done')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 1)
+  } finally {
+    for (const key of keys) {
+      const value = previous[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await request(app).put('/api/settings').send({ permissionMode: previousMode }).expect(200)
+    await request(app).delete('/api/data').expect(204)
+  }
 })
 
 test('unconnected services stay inactive and unsupported workflows do not return success', async () => {

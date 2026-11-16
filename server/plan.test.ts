@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { actionHash, draftPlan } from './plan.js'
+import { actionHash, asksForExplicitLocalTasks, draftPlan } from './plan.js'
 
 test('without a model, Forge does not fabricate an answer and only creates task suggestions when asked', async () => {
   const plan = await draftPlan('What is the capital of Ghana?')
@@ -12,6 +12,26 @@ test('without a model, Forge does not fabricate an answer and only creates task 
   assert.match(taskPlan.assistantOutput?.answer ?? '', /Task History/)
   assert.doesNotMatch(taskPlan.assistantOutput?.answer ?? '', /below/)
   assert.equal(taskPlan.steps.length, 2)
+})
+
+test('local-task intent requires an explicit creation request and fails closed on negation', async () => {
+  for (const prompt of [
+    'Create a local task to review the launch checklist.',
+    'Add a task to my task list for the customer call.',
+    'Please save this to my to-do list.',
+  ]) assert.equal(asksForExplicitLocalTasks(prompt), true, prompt)
+
+  for (const prompt of [
+    'Do not create local tasks; just explain the plan.',
+    'Please don’t create a local task for this.',
+    'I do not want you to add a task to my list.',
+    'No need to create a task; provide the answer only.',
+    'Do not add tasks to my to-do list.',
+    'Help me review the plan without creating a task.',
+  ]) {
+    assert.equal(asksForExplicitLocalTasks(prompt), false, prompt)
+    assert.equal((await draftPlan(prompt)).steps.length, 0, prompt)
+  }
 })
 
 test('configured model returns a useful answer and deliverable independently from local tasks', async () => {

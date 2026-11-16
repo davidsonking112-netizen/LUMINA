@@ -29,6 +29,17 @@ db.exec(`
     expires_at TEXT NOT NULL,
     revoked_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS idempotency_keys (
+    request_id TEXT PRIMARY KEY,
+    request_hash TEXT NOT NULL,
+    plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS workspace_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,

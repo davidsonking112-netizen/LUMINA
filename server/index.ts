@@ -1,9 +1,10 @@
 import express from 'express'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { db, recordAudit } from './db.js'
-import { actionHash, draftPlan, isModelConfigured } from './plan.js'
-import type { AuditEvent, Connector, ForgeTask, MemoryEntry, Plan, PlanStep } from '../src/types.js'
+import { actionHash, asksForExplicitLocalTasks, draftPlan, isModelConfigured } from './plan.js'
+import { actionMayRun, registeredAction } from './policy.js'
+import type { AuditEvent, Connector, ForgeTask, MemoryEntry, PermissionMode, Plan, PlanStep } from '../src/types.js'
 
 const app = express()
 const APPROVAL_TTL_MS = 10 * 60 * 1000
@@ -38,9 +39,10 @@ app.use('/api', (req, res, next) => {
 })
 app.use(express.json({ limit: '32kb' }))
 
-const requestSchema = z.object({ request: z.string().trim().min(2).max(2000) })
+const requestSchema = z.object({ request: z.string().trim().min(2).max(2000), requestId: z.string().uuid().optional() })
 const editSchema = z.object({ steps: z.array(z.object({ id: z.string().uuid(), taskTitle: z.string().trim().min(2).max(120) })).min(1).max(8) })
 const memorySchema = z.object({ title: z.string().trim().min(2).max(80), content: z.string().trim().min(2).max(1200) })
+const settingsSchema = z.object({ permissionMode: z.enum(['suggest', 'approve', 'automatic']) })
 
 function loadPlan(id: string): Plan | undefined {
   const row = db.prepare('SELECT * FROM plans WHERE id = ?').get(id) as { id: string; request: string; generation_mode: Plan['generationMode']; status: Plan['status']; created_at: string; updated_at: string; steps_json: string; assistant_output_json?: string } | undefined
@@ -58,6 +60,35 @@ function savePlan(plan: Plan) {
 
 function jsonError(res: express.Response, status: number, message: string) {
   return res.status(status).json({ error: message })
+}
+
+function currentPermissionMode(): PermissionMode {
+  const row = db.prepare('SELECT value FROM workspace_settings WHERE key = ?').get('permissionMode') as { value: string } | undefined
+  return row?.value === 'suggest' || row?.value === 'automatic' ? row.value : 'approve'
+}
+
+function invalidateApprovalsForModeChange() {
+  const now = new Date().toISOString()
+  db.prepare('UPDATE approvals SET revoked_at = ? WHERE revoked_at IS NULL').run(now)
+  const plans = db.prepare('SELECT id FROM plans').all() as Array<{ id: string }>
+  for (const row of plans) {
+    const plan = loadPlan(row.id)
+    if (!plan) continue
+    let changed = false
+    for (const step of plan.steps) {
+      if (step.status !== 'approved') continue
+      step.status = 'pending'
+      step.approvalId = undefined
+      step.expiresAt = undefined
+      changed = true
+      recordAudit('approval.invalidated', 'plan_step', step.id, 'Permission mode changed; prior approval was cleared and the action must be reviewed again.')
+    }
+    if (changed) {
+      plan.updatedAt = now
+      plan.status = planStatusFor(plan.steps)
+      savePlan(plan)
+    }
+  }
 }
 
 function planStatusFor(steps: PlanStep[]): Plan['status'] {
@@ -86,8 +117,28 @@ function resetApprovalForReview(plan: Plan, step: PlanStep, eventType: string, s
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'local-prototype' }))
 
+app.get('/api/settings', (_req, res) => res.json({ permissionMode: currentPermissionMode() }))
+
+app.put('/api/settings', (req, res) => {
+  const parsed = settingsSchema.safeParse(req.body)
+  if (!parsed.success) return jsonError(res, 400, 'Choose Suggest, Approve, or Automatic permission mode.')
+  db.transaction(() => {
+    if (currentPermissionMode() !== parsed.data.permissionMode) invalidateApprovalsForModeChange()
+    const updatedAt = new Date().toISOString()
+    db.prepare(`INSERT INTO workspace_settings (key, value, updated_at) VALUES ('permissionMode', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+      .run(parsed.data.permissionMode, updatedAt)
+  })()
+  res.json({ permissionMode: parsed.data.permissionMode })
+})
+
 app.get('/api/capabilities', (_req, res) => res.json({
-  permissionModes: [{ id: 'approve', label: 'Review every action', description: 'Each local task waits for explicit approval before it is added.' }],
+  permissionModes: [
+    { id: 'suggest', label: 'Suggest', description: 'Recommend actions only; nothing can run.' },
+    { id: 'approve', label: 'Approve', description: 'Review each supported action before it runs.' },
+    { id: 'automatic', label: 'Automatic', description: 'Only explicitly requested, low-risk local tasks can run automatically.' },
+  ],
+  currentPermissionMode: currentPermissionMode(),
   inputModes: ['text'],
   actionKinds: ['create_task'],
   modelConfigured: isModelConfigured(),
@@ -145,20 +196,77 @@ app.delete('/api/data', (_req, res) => {
 app.post('/api/plans', async (req, res) => {
   const parsed = requestSchema.safeParse(req.body)
   if (!parsed.success) return jsonError(res, 400, 'Enter a request between 2 and 2,000 characters.')
+  const explicitTaskIntent = asksForExplicitLocalTasks(parsed.data.request)
+  const modeAtStart = currentPermissionMode()
+  if (modeAtStart === 'automatic' && explicitTaskIntent && !parsed.data.requestId) {
+    return jsonError(res, 400, 'Automatic local task creation requires a stable UUID request ID so retries cannot duplicate tasks.')
+  }
+  const requestHash = createHash('sha256').update(parsed.data.request).digest('hex')
+  if (parsed.data.requestId) {
+    const prior = db.prepare('SELECT request_hash, plan_id FROM idempotency_keys WHERE request_id = ?').get(parsed.data.requestId) as { request_hash: string; plan_id: string } | undefined
+    if (prior) {
+      if (prior.request_hash !== requestHash) return jsonError(res, 409, 'This request ID was already used for different content; no new action was taken.')
+      const priorPlan = loadPlan(prior.plan_id)
+      if (priorPlan) return res.status(200).json(priorPlan)
+    }
+  }
   let plan: Plan
   try {
-    plan = await draftPlan(parsed.data.request)
+    plan = await draftPlan(parsed.data.request, { automaticTasksOnly: modeAtStart === 'automatic' && explicitTaskIntent })
   } catch {
     return jsonError(res, 502, 'Forge could not generate an answer with the configured model. No answer or task list was saved.')
   }
-  savePlan(plan)
-  const summary = plan.assistantOutput?.status === 'generated'
-    ? 'Generated answer saved locally; no external action was taken.'
-    : plan.steps.length
-      ? 'Answer unavailable; local task titles saved separately for review. No task was run.'
-      : 'Answer unavailable; no content or tasks were created.'
-  recordAudit('plan.created', 'plan', plan.id, summary)
-  res.status(201).json(plan)
+  const persisted = db.transaction(() => {
+    if (parsed.data.requestId) {
+      const prior = db.prepare('SELECT request_hash, plan_id FROM idempotency_keys WHERE request_id = ?').get(parsed.data.requestId) as { request_hash: string; plan_id: string } | undefined
+      if (prior) {
+        if (prior.request_hash !== requestHash) return { conflict: true as const }
+        const priorPlan = loadPlan(prior.plan_id)
+        if (priorPlan) return { plan: priorPlan, replayed: true as const }
+      }
+    }
+    const mode = currentPermissionMode()
+    const mayRunAutomatically = modeAtStart === 'automatic'
+      && mode === 'automatic'
+      && Boolean(parsed.data.requestId)
+      && explicitTaskIntent
+      && plan.steps.length > 0
+      && plan.steps.every((step) => step.provenance === 'user_request_parser' && actionMayRun(step.kind, mode, true))
+    const now = new Date().toISOString()
+    savePlan(plan)
+    if (parsed.data.requestId) db.prepare('INSERT INTO idempotency_keys (request_id, request_hash, plan_id, created_at) VALUES (?, ?, ?, ?)')
+      .run(parsed.data.requestId, requestHash, plan.id, now)
+    if (mayRunAutomatically) {
+      for (const step of plan.steps) {
+        const policy = registeredAction(step.kind)
+        if (!policy?.automaticEligible || !actionMayRun(step.kind, mode, true) || step.status !== 'pending' || !dependenciesReady(plan, step)) continue
+        const taskId = randomUUID()
+        db.prepare('INSERT INTO tasks (id, title, created_at, source_plan_id, source_step_id) VALUES (?, ?, ?, ?, ?)')
+          .run(taskId, step.taskTitle, now, plan.id, step.id)
+        step.status = 'done'
+        step.startedAt = now
+        step.completedAt = now
+        step.output = 'Automatically added the explicitly requested low-risk local task.'
+        step.resultTaskId = taskId
+        step.riskLevel = policy.riskLevel
+        step.tool = policy.tool
+        step.requiresApproval = policy.requiresApproval
+        recordAudit('action.auto_succeeded', 'plan_step', step.id, 'Automatic mode added an explicitly requested low-risk local task.')
+      }
+      plan.updatedAt = now
+      plan.status = planStatusFor(plan.steps)
+      savePlan(plan)
+    }
+    const summary = plan.assistantOutput?.status === 'generated'
+      ? 'Generated answer saved locally; no external action was taken.'
+      : plan.steps.length
+        ? mayRunAutomatically ? 'Explicit low-risk local tasks were added automatically.' : 'Answer unavailable; local task titles saved separately for review. No task was run.'
+        : 'Answer unavailable; no content or tasks were created.'
+    recordAudit('plan.created', 'plan', plan.id, summary)
+    return { plan, replayed: false as const }
+  })()
+  if ('conflict' in persisted) return jsonError(res, 409, 'This request ID was already used for different content; no new action was taken.')
+  res.status(persisted.replayed ? 200 : 201).json(persisted.plan)
 })
 
 app.get('/api/plans/:id', (req, res) => {
@@ -207,7 +315,9 @@ app.post('/api/plans/:id/steps/:stepId/approve', (req, res) => {
   if (!plan) return jsonError(res, 404, 'Plan not found.')
   const step = plan.steps.find((item) => item.id === req.params.stepId)
   if (!step) return jsonError(res, 404, 'Plan step not found.')
-  if (step.kind !== 'create_task') return jsonError(res, 403, 'This action type is not connected in this prototype.')
+  const mode = currentPermissionMode()
+  const policy = registeredAction(step.kind)
+  if (!policy?.supported || !actionMayRun(step.kind, mode)) return jsonError(res, 403, 'This action is not enabled by the server policy.')
   if (step.status === 'done') return jsonError(res, 409, 'This step has already been completed.')
   if (!dependenciesReady(plan, step)) return jsonError(res, 409, 'Complete the earlier step before approving this one.')
   if (step.actionHash !== actionHash(plan.id, step)) return jsonError(res, 409, 'The action changed. Review the updated details before approving it.')
@@ -251,7 +361,9 @@ app.post('/api/plans/:id/steps/:stepId/execute', (req, res) => {
   if (!plan) return jsonError(res, 404, 'Plan not found.')
   const step = plan.steps.find((item) => item.id === req.params.stepId)
   if (!step) return jsonError(res, 404, 'Plan step not found.')
-  if (step.kind !== 'create_task') return jsonError(res, 403, 'This action type is not connected in this prototype.')
+  const mode = currentPermissionMode()
+  const policy = registeredAction(step.kind)
+  if (!policy?.supported || !actionMayRun(step.kind, mode)) return jsonError(res, 403, 'This action is not enabled by the server policy.')
   if (!dependenciesReady(plan, step)) return jsonError(res, 409, 'This step is waiting for an earlier step to complete.')
   const existing = db.prepare('SELECT id, title FROM tasks WHERE source_plan_id = ? AND source_step_id = ?').get(plan.id, step.id) as { id: string; title: string } | undefined
   if (existing) {

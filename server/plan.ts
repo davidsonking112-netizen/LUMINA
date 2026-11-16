@@ -32,13 +32,23 @@ export function isModelConfigured() {
 
 function splitIntoTasks(request: string) {
   const cleaned = request.trim().replace(/\s+/g, ' ')
-  if (!asksForLocalTasks(cleaned)) return []
+  if (!asksForExplicitLocalTasks(cleaned)) return []
   const clauses = cleaned.split(/(?:\s*;\s*|\s+then\s+|\s+and then\s+)/i).map((part) => part.replace(/[.!?]+$/, '').trim()).filter(Boolean)
   return (clauses.length ? clauses : [cleaned]).slice(0, MAX_STEPS).map(normalizeTaskTitle)
 }
 
-function asksForLocalTasks(request: string) {
-  return /\b(?:add|create|save|put|make)\b.{0,40}\b(?:local\s+)?(?:tasks?|to-dos?|todos?)\b/i.test(request) || /\b(?:add|save|put)\b.{0,40}\b(?:to|in|on)\s+(?:my\s+)?(?:task|to-do|todo)\s+list\b/i.test(request)
+function declinesLocalTasks(request: string) {
+  const normalized = request.replace(/[‘’]/g, "'").replace(/\s+/g, ' ').toLowerCase()
+  return /\b(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt|not|never|avoid|without|no\s+need\s+to|refuse(?:s|d)?\s+to)\b.{0,80}\b(?:local\s+)?(?:tasks?|to-?dos?|todos?|task\s+list)\b/i.test(normalized)
+    || /\bno\s+(?:(?:local|separate|additional)\s+)?(?:tasks?|to-?dos?|todos?)\b/i.test(normalized)
+}
+
+export function asksForExplicitLocalTasks(request: string) {
+  if (declinesLocalTasks(request)) return false
+  const normalized = request.replace(/[‘’]/g, "'").replace(/\s+/g, ' ').toLowerCase()
+  return /\b(?:add|create|save|put)\s+(?:(?:a|an|the|some|new|local|these|those|separate|another|additional)\s+){0,4}(?:local\s+)?(?:tasks?|to-?dos?|todos?)\b/i.test(normalized)
+    || /\bmake\s+(?:(?:a|an|the|some|new|local|these|those|separate|another|additional)\s+){0,3}(?:local\s+)?(?:tasks?|to-?dos?|todos?)\b/i.test(normalized)
+    || /\b(?:add|save|put)\s+(?:this\s+)?(?:to|in|on)\s+(?:my\s+)?(?:task|to-do|todo)\s+list\b/i.test(normalized)
 }
 
 function normalizeTaskTitle(clause: string) {
@@ -73,12 +83,12 @@ async function generateAssistantOutput(request: string): Promise<{ output: Assis
   if (!parsed.success) throw new Error('The configured model returned an answer in an unsupported format.')
   return {
     output: { status: 'generated', answer: parsed.data.answer, ...(parsed.data.deliverables.length ? { deliverables: parsed.data.deliverables } : {}), generatedAt: new Date().toISOString() },
-    localTasks: asksForLocalTasks(request) ? parsed.data.localTasks.map(normalizeTaskTitle) : [],
+    localTasks: asksForExplicitLocalTasks(request) ? parsed.data.localTasks.map(normalizeTaskTitle) : [],
     assumptions: parsed.data.assumptions,
   }
 }
 
-function localTaskSteps(planId: string, titles: string[]): PlanStep[] {
+function localTaskSteps(planId: string, titles: string[], provenance: NonNullable<PlanStep['provenance']>): PlanStep[] {
   const stepIds = titles.map(() => randomUUID())
   return titles.map((title, index): PlanStep => {
     const step: PlanStep = {
@@ -86,6 +96,7 @@ function localTaskSteps(planId: string, titles: string[]): PlanStep[] {
       detail: 'This adds only a local task title to Forge on this device. It does not create the requested document or contact an external service.',
       kind: 'create_task', taskTitle: title, status: 'pending', actionHash: '', tool: 'Local task list',
       riskLevel: 'low', requiresApproval: true, dependsOn: index ? [stepIds[index - 1]] : [],
+      provenance,
       expectedResult: 'A local task with this exact title.',
       checkpoint: index ? `Checkpoint ${index}: the earlier local task must be completed first.` : 'Checkpoint 0: confirm this local task is useful.',
       startedAt: undefined, completedAt: undefined,
@@ -95,11 +106,14 @@ function localTaskSteps(planId: string, titles: string[]): PlanStep[] {
   })
 }
 
-export async function draftPlan(request: string): Promise<Plan> {
+export async function draftPlan(request: string, options: { automaticTasksOnly?: boolean } = {}): Promise<Plan> {
   const id = randomUUID()
   const now = new Date().toISOString()
   const generated = await generateAssistantOutput(request)
-  const localTitles = generated?.localTasks ?? splitIntoTasks(request)
+  const parsedTitles = splitIntoTasks(request)
+  const modelTitles = generated?.localTasks ?? []
+  const localTitles = options.automaticTasksOnly ? parsedTitles : modelTitles.length ? modelTitles : parsedTitles
+  const provenance: NonNullable<PlanStep['provenance']> = !options.automaticTasksOnly && modelTitles.length ? 'model_suggestion' : 'user_request_parser'
   const assistantOutput: AssistantOutput = generated?.output ?? {
     status: 'unavailable',
     answer: localTitles.length
@@ -108,7 +122,7 @@ export async function draftPlan(request: string): Promise<Plan> {
   }
   return {
     id, request: request.trim(), generationMode: generated ? 'ai' : 'local_parser', status: generated ? localTitles.length ? 'draft' : 'completed' : localTitles.length ? 'draft' : 'failed', createdAt: now, updatedAt: now,
-    steps: localTaskSteps(id, localTitles), assistantOutput,
+    steps: localTaskSteps(id, localTitles, provenance), assistantOutput,
     assumptions: generated?.assumptions ?? ['No language model is configured; no answer or deliverable was generated.'],
   }
 }

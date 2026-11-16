@@ -25,6 +25,7 @@ export interface PlanStep {
   riskLevel?: RiskLevel
   requiresApproval?: boolean
   dependsOn?: string[]
+  provenance?: 'user_request_parser' | 'model_suggestion'
   expectedResult?: string
   checkpoint?: string
   output?: string
