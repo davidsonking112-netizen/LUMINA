@@ -283,6 +283,7 @@
 .composer-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 1px 8px; color: #70766c; font-size: 8px; font-weight: 850; letter-spacing: .13em; }
 .composer-label-row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--chat-forest); }
 .composer-label-row span:last-child { font-size: 7px; }
+.composer-context-note { margin: 0 2px 7px; color: #72786e; font-size: 9px; line-height: 1.4; }
 .chat-workbench .composer textarea { min-height: 65px; max-height: 180px; padding: 2px 2px 5px; color: #2e352e; font-size: 14px; line-height: 1.65; }
 .chat-workbench .composer textarea::placeholder { color: #85877c; }
 .chat-workbench .composer-footer { gap: 14px; padding-top: 10px; border-top-color: #e9e5da; }
@@ -395,6 +396,7 @@
   .chat-workbench:has(.plan-details[open]) .composer { position: static; bottom: auto; }
   .composer-label-row { margin-bottom: 5px; font-size: 7px; }
   .composer-label-row span:last-child { display: none; }
+  .composer-context-note { margin: 0 1px 6px; font-size: 8px; }
   .chat-workbench .composer textarea { min-height: 48px; font-size: 13px; }
   .chat-workbench .composer-footer { align-items: flex-end; gap: 8px; padding-top: 8px; }
   .chat-workbench .composer-hint { max-width: 165px; font-size: 8px; line-height: 1.35; }

@@ -18,6 +18,7 @@ test('plan review, exact approval, task execution, export and deletion history w
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Welcome back, Davids' })).toBeVisible()
   const dashboardAccessibility = await new AxeBuilder({ page }).analyze()
@@ -26,6 +27,8 @@ test('plan review, exact approval, task execution, export and deletion history w
   await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toBeVisible()
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations.filter((violation) => violation.impact === 'critical' || violation.impact === 'serious')).toEqual([])
+  await expect(page.locator('#composer-context-note')).toContainText('Each submission starts a separate request; include any context it needs.')
+  await page.screenshot({ path: 'screenshots/chat-redesign/after-empty-chat.png', fullPage: true })
   await page.getByLabel('Message Forge').fill(requestText)
   await page.getByRole('button', { name: 'Submit request' }).click()
 
@@ -41,6 +44,9 @@ test('plan review, exact approval, task execution, export and deletion history w
   await expect(planDetails).not.toHaveAttribute('open')
   await page.locator('.plan-summary').click()
   await expect(planDetails).toHaveAttribute('open', '')
+  await expect(page.locator('.conversation-kicker')).toContainText('STANDALONE REQUEST')
+  await expect(page.locator('#composer-context-note')).toContainText('Each send starts a separate request; the one above isn’t included.')
+  await page.screenshot({ path: 'screenshots/chat-redesign/after-local-review-expanded.png', fullPage: true })
   await expect(page.getByTitle(requestText)).toBeVisible()
   await expect(page.getByLabel('Task status: Draft')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open task history' })).toBeVisible()
@@ -94,6 +100,7 @@ test('expanded local task review stays clear of the composer on mobile', async (
 
   const planDetails = page.locator('.plan-details')
   await expect(planDetails).toHaveAttribute('open', '')
+  await expect(page.locator('#composer-context-note')).toContainText('Each send starts a separate request; the one above isn’t included.')
   await expect(page.getByRole('button', { name: /Approve task:/ })).toHaveCount(2)
   const overlap = await page.evaluate(() => {
     const composer = document.querySelector('.composer')!.getBoundingClientRect()
@@ -155,6 +162,7 @@ test('generated answer and draft are the result, with separate local tasks colla
   await page.getByLabel('Message Forge').fill(requestText)
   await page.getByRole('button', { name: 'Ask Forge' }).click()
   await expect(page.locator('#composer-disclosure')).toContainText('Your prompt is sent to the configured external AI provider')
+  await expect(page.locator('#composer-context-note')).toContainText('Each send starts a separate request; the one above isn’t included.')
   await expect(page.locator('.assistant-answer')).toContainText('ready-to-edit announcement draft')
   await expect(page.getByLabel('Task status: Answer ready')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Customer portal launch announcement' })).toBeVisible()
@@ -184,6 +192,7 @@ test('a no-model question is saved locally with honest feedback', async ({ page 
   await page.goto('/')
   await page.getByRole('button', { name: 'New task' }).first().click()
   await expect(page.locator('#composer-disclosure')).toContainText('Submitted requests are saved locally')
+  await expect(page.locator('#composer-context-note')).toContainText('Each submission starts a separate request; include any context it needs.')
   await page.getByLabel('Message Forge').fill(requestText)
   await page.getByRole('button', { name: 'Submit request' }).click()
   await expect(page.getByText('No answer generated. Your request was saved locally; no content or task was created.')).toBeVisible()
