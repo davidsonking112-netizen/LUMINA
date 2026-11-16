@@ -1,7 +1,18 @@
 import { expect, test } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const requestText = 'Create local tasks to review the customer portal launch; collect feedback from support.'
+
+async function markGeneratedFixture(page: Page) {
+  await page.evaluate(() => {
+    const badge = document.createElement('div')
+    badge.setAttribute('role', 'note')
+    badge.textContent = 'TEST FIXTURE · MOCKED MODEL RESPONSE · NOT LIVE AI'
+    badge.style.cssText = 'padding:7px 12px;border-bottom:1px solid #d9bc84;background:#fff1d3;color:#684a22;text-align:center;font:800 10px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.08em'
+    document.body.insertBefore(badge, document.body.firstChild)
+  })
+}
 
 test('plan review, exact approval, task execution, export and deletion history work end to end', async ({ page }) => {
   const pageErrors: string[] = []
@@ -25,7 +36,7 @@ test('plan review, exact approval, task execution, export and deletion history w
   await expect(page.getByText('Local task actions')).toBeVisible()
   await expect(page.locator('.plan-summary')).toContainText('1 ready for review · 1 waiting on earlier steps')
   await page.getByRole('button', { name: 'Dismiss notification' }).click()
-  await page.screenshot({ path: 'screenshots/chat-ui-review/no-model-capability-message.png', fullPage: true })
+  await page.screenshot({ path: 'screenshots/chat-redesign/after-no-model-local-review.png', fullPage: true })
   const planDetails = page.locator('.plan-details')
   await expect(planDetails).not.toHaveAttribute('open')
   await page.locator('.plan-summary').click()
@@ -119,7 +130,8 @@ test('generated answer and draft are the result, with separate local tasks colla
   await expect(page.getByText('Review the announcement with the product team')).toBeHidden()
   await page.getByRole('button', { name: 'Dismiss notification' }).click()
 
-  await page.screenshot({ path: 'screenshots/chat-ui-review/generated-answer-ui-preview.png', fullPage: true })
+  await markGeneratedFixture(page)
+  await page.screenshot({ path: 'screenshots/chat-redesign/fixture-generated-answer-ui-preview.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await page.getByRole('button', { name: /Open new task/ }).click()
@@ -128,7 +140,8 @@ test('generated answer and draft are the result, with separate local tasks colla
   await expect(page.getByRole('heading', { name: 'Customer portal launch announcement' })).toBeVisible()
   const dimensions = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth }))
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport)
-  await page.screenshot({ path: 'screenshots/chat-ui-review/generated-answer-ui-preview-mobile.png', fullPage: true })
+  await markGeneratedFixture(page)
+  await page.screenshot({ path: 'screenshots/chat-redesign/fixture-generated-answer-ui-preview-mobile.png', fullPage: true })
 })
 
 test('a no-model question is saved locally with honest feedback', async ({ page }) => {
