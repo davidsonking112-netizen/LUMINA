@@ -37,6 +37,16 @@ test('configured model returns a useful answer and deliverable independently fro
     const contentOnly = await draftPlan('Draft a launch announcement.')
     assert.equal(contentOnly.assistantOutput?.status, 'generated')
     assert.equal(contentOnly.steps.length, 0)
+    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      answer: 'Ready.',
+      deliverables: [
+        { title: 'First long draft', content: 'x'.repeat(3500) },
+        { title: 'Second long draft', content: 'y'.repeat(3500) },
+      ],
+      localTasks: [],
+      assumptions: [],
+    }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    await assert.rejects(() => draftPlan('Draft two long pieces.'), /unsupported format/)
   } finally {
     globalThis.fetch = previousFetch
     for (const key of keys) {

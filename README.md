@@ -19,7 +19,7 @@ Plan edits invalidate earlier approvals. The server checks the current action ha
 
 The API rejects mutation requests unless the Host and Origin are allowlisted, Fetch Metadata is same-origin, and the JSON request includes the non-simple `X-Forge-Request: 1` header. The browser test suite includes a hostile-origin HTML-form regression. This is defense in depth for the local prototype, not a substitute for authentication or deployment hardening.
 
-If all three `FORGE_LLM_*` values are set in `.env`, the original request text is sent over HTTPS to that OpenAI-compatible provider to generate the answer and any text draft. The model may separately suggest local task titles only when the user asks for local tasks. HTTP is rejected unless a developer explicitly enables the loopback-only development exception. Model output is shown as untrusted text, saved with the local plan, and never invokes tools or performs external actions. Without a model, Forge does not fabricate an answer or deliverable.
+If all three `FORGE_LLM_*` values are set in `.env`, the original request text is sent over HTTPS to that OpenAI-compatible provider to generate the answer and any text draft. The model may separately suggest local task titles only when the user asks for local tasks. HTTP is rejected unless a developer explicitly enables the loopback-only development exception. Model output is shown as untrusted text, saved with the local plan, and never invokes tools or performs external actions. Combined generated text is capped at 7,000 characters so it fits below the response token limit. Without a model, Forge does not fabricate an answer or deliverable.
 
 ## Not connected yet
 

@@ -20,6 +20,7 @@ test('plan review, exact approval, task execution, export and deletion history w
 
   await expect(page.locator('.assistant-answer')).toContainText('language model hasn’t been configured')
   await expect(page.locator('.assistant-answer')).toContainText('No deliverable was created')
+  await expect(page.getByText('No answer generated. Local task titles were saved separately for review.')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toHaveCount(0)
   await expect(page.getByText('Local task actions')).toBeVisible()
   await expect(page.locator('.plan-summary')).toContainText('1 ready for review · 1 waiting on earlier steps')
@@ -107,6 +108,7 @@ test('generated answer and draft are the result, with separate local tasks colla
   await page.getByRole('button', { name: 'New task' }).first().click()
   await page.getByLabel('Message Forge').fill(requestText)
   await page.getByRole('button', { name: 'Ask Forge' }).click()
+  await expect(page.locator('#composer-disclosure')).toContainText('Your prompt is sent to the configured external AI provider')
   await expect(page.locator('.assistant-answer')).toContainText('ready-to-edit announcement draft')
   await expect(page.getByLabel('Task status: Answer ready')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Customer portal launch announcement' })).toBeVisible()
@@ -127,4 +129,18 @@ test('generated answer and draft are the result, with separate local tasks colla
   const dimensions = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth }))
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport)
   await page.screenshot({ path: 'screenshots/chat-ui-review/generated-answer-ui-preview-mobile.png', fullPage: true })
+})
+
+test('a no-model question is saved locally with honest feedback', async ({ page }) => {
+  const requestText = 'What is the capital of Ghana?'
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New task' }).first().click()
+  await expect(page.locator('#composer-disclosure')).toContainText('Submitted requests are saved locally')
+  await page.getByLabel('Message Forge').fill(requestText)
+  await page.getByRole('button', { name: 'Submit request' }).click()
+  await expect(page.getByText('No answer generated. Your request was saved locally; no content or task was created.')).toBeVisible()
+  await expect(page.locator('.assistant-answer')).toContainText('No content or task was created')
+  await page.getByRole('button', { name: 'Task history', exact: true }).click()
+  await page.getByRole('tab', { name: 'Plans' }).click()
+  await expect(page.getByText(requestText)).toBeVisible()
 })

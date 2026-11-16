@@ -87,6 +87,10 @@ test('unconnected services stay inactive and unsupported workflows do not return
     assert.equal(unavailable.body.assistantOutput.status, 'unavailable')
     assert.match(unavailable.body.assistantOutput.answer, /No content or task was created/)
     assert.equal(unavailable.body.steps.length, 0)
+    const saved = await request(app).get(`/api/plans/${unavailable.body.id}`).expect(200)
+    assert.equal(saved.body.request, 'What is the capital of Ghana?')
+    const activities = await request(app).get('/api/activity').expect(200)
+    assert.ok(activities.body.some((event: { summary: string }) => event.summary === 'Answer unavailable; no content or tasks were created.'))
   } finally {
     for (const [index, key] of ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'].entries()) {
       const value = previousModel[index]
