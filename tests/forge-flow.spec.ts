@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-const requestText = `Create local tasks to prepare a browser flow check ${Date.now()}; review the generated local task`
+const requestText = 'Create local tasks to review the customer portal launch; collect feedback from support.'
 
 test('plan review, exact approval, task execution, export and deletion history work end to end', async ({ page }) => {
   const pageErrors: string[] = []
