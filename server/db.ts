@@ -14,7 +14,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     request TEXT NOT NULL,
     generation_mode TEXT NOT NULL DEFAULT 'local_parser' CHECK (generation_mode IN ('local_parser', 'ai')),
-    status TEXT NOT NULL CHECK (status IN ('draft', 'in_progress', 'completed')),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'in_progress', 'running', 'completed', 'failed')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     steps_json TEXT NOT NULL

@@ -1,4 +1,4 @@
-export type StepStatus = 'pending' | 'approved' | 'done' | 'denied'
+export type StepStatus = 'pending' | 'approved' | 'active' | 'done' | 'denied' | 'failed'
 export type PermissionMode = 'suggest' | 'approve' | 'automatic'
 export type ActionKind = 'create_task' | 'send_email' | 'calendar_change' | 'file_operation' | 'publish_content' | 'record_update' | 'web_research' | 'document_transform'
 export type RiskLevel = 'low' | 'medium' | 'high'
@@ -19,13 +19,18 @@ export interface PlanStep {
   requiresApproval?: boolean
   dependsOn?: string[]
   expectedResult?: string
+  checkpoint?: string
+  output?: string
+  startedAt?: string
+  completedAt?: string
+  error?: string
 }
 
 export interface Plan {
   id: string
   request: string
   generationMode: 'local_parser' | 'ai'
-  status: 'draft' | 'in_progress' | 'completed'
+  status: 'draft' | 'in_progress' | 'running' | 'completed' | 'failed'
   createdAt: string
   updatedAt: string
   steps: PlanStep[]

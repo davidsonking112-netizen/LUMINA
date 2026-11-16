@@ -159,6 +159,18 @@ test('expired approvals return to pending and can be reviewed again without runn
   assert.equal(executed.body.plan.steps[0].status, 'done')
 })
 
+test('multi-step plans enforce dependencies and report completed step output', async () => {
+  const created = await request(app).post('/api/plans').send({ request: 'Review the latest sales report; create a follow-up task.' }).expect(201)
+  const plan = created.body as { id: string; steps: Array<{ id: string; status: string }> }
+  assert.equal(plan.steps.length, 2)
+  await request(app).post(`/api/plans/${plan.id}/steps/${plan.steps[1].id}/approve`).expect(409)
+  await request(app).post(`/api/plans/${plan.id}/steps/${plan.steps[0].id}/approve`).expect(200)
+  const executed = await request(app).post(`/api/plans/${plan.id}/steps/${plan.steps[0].id}/execute`).expect(200)
+  assert.equal(executed.body.plan.steps[0].status, 'done')
+  assert.equal(executed.body.plan.steps[0].output, 'Created the approved local task.')
+  await request(app).post(`/api/plans/${plan.id}/steps/${plan.steps[1].id}/approve`).expect(200)
+})
+
 test('owner-added memories can be edited and deleted without copying their content into audit summaries', async () => {
   const created = await request(app).post('/api/memories').send({ title: 'Writing style', content: 'Keep notes concise.' }).expect(201)
   const memory = created.body as { id: string; createdAt: string }

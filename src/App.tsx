@@ -484,28 +484,34 @@ function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApp
         <div>
           <div className="plan-kicker"><Sparkles size={14} /> {plan.generationMode === 'ai' ? 'AI-ASSISTED DRAFT' : 'BASIC LOCAL DRAFT'}</div>
           <h2>Here’s a first pass</h2>
-          <p>Each step below only creates a local task. Review the exact title before approving.</p>
+          <p>Forge mapped the work into checkpoints. Review each step, then continue when its dependencies are ready.</p>
         </div>
         <span className={`plan-status ${plan.status}`}>{plan.status.replace('_', ' ')}</span>
       </div>
       <div className="steps-list">
         {plan.steps.map((step, index) => (
           <article className={`plan-step ${step.status}`} key={step.id}>
-            <div className="step-index">{step.status === 'done' ? <Check size={14} /> : index + 1}</div>
+            <div className="step-index">{step.status === 'done' ? <Check size={14} /> : step.status === 'active' ? <LoaderCircle className="spin" size={14} /> : step.status === 'failed' ? <X size={14} /> : index + 1}</div>
             <div className="step-content">
               <label className="sr-only" htmlFor={`step-${step.id}`}>Task title for step {index + 1}</label>
-              <input id={`step-${step.id}`} value={step.taskTitle} maxLength={120} onChange={(event) => onTitleChange(plan.id, step.id, event.target.value)} disabled={step.status === 'done'} />
+              <input id={`step-${step.id}`} value={step.taskTitle} maxLength={120} onChange={(event) => onTitleChange(plan.id, step.id, event.target.value)} disabled={step.status === 'done' || step.status === 'active'} />
               <details className="step-details"><summary>What this step does</summary><p>{step.detail}</p><p>Running this step only adds a task to Forge on this device. It won’t contact an external service.</p></details>
+              {step.checkpoint && <span className="step-checkpoint"><ShieldCheck size={12} /> {step.checkpoint}</span>}
               {step.status === 'approved' && step.expiresAt && <span className="approval-expiry"><Clock3 size={13} /> Approved until {formatDate(step.expiresAt)}</span>}
+              {step.status === 'active' && <span className="step-running"><LoaderCircle className="spin" size={12} /> Working this step…</span>}
+              {step.status === 'done' && step.output && <span className="step-output"><Check size={12} /> {step.output}</span>}
+              {step.status === 'failed' && <span className="step-error"><X size={12} /> {step.error ?? 'This step needs attention.'}</span>}
               {step.status === 'denied' && <span className="denied-note">Declined. No task was created.</span>}
             </div>
             <div className="step-controls">
               {step.status === 'pending' && <>
-                <button className="approve-button" disabled={loading || hasUnsavedEdits || step.taskTitle.trim().length < 2} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Approve</button>
+                <button className="approve-button" disabled={loading || hasUnsavedEdits || step.taskTitle.trim().length < 2 || Boolean(step.dependsOn?.some((dependencyId) => !plan.steps.some((candidate) => candidate.id === dependencyId && (candidate.status === 'done' || candidate.status === 'denied'))))} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Approve</button>
                 <button className="quiet-button" disabled={loading || hasUnsavedEdits} onClick={() => onDeny(step.id)}>Decline</button>
               </>}
               {step.status === 'approved' && <button className="run-button" disabled={loading || hasUnsavedEdits} onClick={() => onExecute(step.id)}>{loading ? <LoaderCircle className="spin" size={14} /> : <ArrowDown size={14} />} Run task</button>}
               {step.status === 'done' && <span className="complete-label"><Check size={13} /> Done</span>}
+              {step.status === 'active' && <span className="step-state-label">Executing</span>}
+              {step.status === 'failed' && <button className="approve-button" disabled={loading} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Review again</button>}
             </div>
           </article>
         ))}

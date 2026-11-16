@@ -60,9 +60,15 @@ function jsonError(res: express.Response, status: number, message: string) {
 }
 
 function planStatusFor(steps: PlanStep[]): Plan['status'] {
+  if (steps.some((step) => step.status === 'failed')) return 'failed'
   if (steps.every((step) => step.status === 'done' || step.status === 'denied')) return 'completed'
   if (steps.every((step) => step.status === 'pending' || step.status === 'denied')) return 'draft'
+  if (steps.some((step) => step.status === 'active')) return 'running'
   return 'in_progress'
+}
+
+function dependenciesReady(plan: Plan, step: PlanStep) {
+  return (step.dependsOn ?? []).every((dependencyId) => plan.steps.some((candidate) => candidate.id === dependencyId && (candidate.status === 'done' || candidate.status === 'denied')))
 }
 
 function resetApprovalForReview(plan: Plan, step: PlanStep, eventType: string, summary: string) {
@@ -196,6 +202,7 @@ app.post('/api/plans/:id/steps/:stepId/approve', (req, res) => {
   if (!step) return jsonError(res, 404, 'Plan step not found.')
   if (step.kind !== 'create_task') return jsonError(res, 403, 'This action type is not connected in this prototype.')
   if (step.status === 'done') return jsonError(res, 409, 'This step has already been completed.')
+  if (!dependenciesReady(plan, step)) return jsonError(res, 409, 'Complete the earlier step before approving this one.')
   if (step.actionHash !== actionHash(plan.id, step)) return jsonError(res, 409, 'The action changed. Review the updated details before approving it.')
   const now = new Date()
   const expiresAt = new Date(now.getTime() + APPROVAL_TTL_MS).toISOString()
@@ -238,6 +245,7 @@ app.post('/api/plans/:id/steps/:stepId/execute', (req, res) => {
   const step = plan.steps.find((item) => item.id === req.params.stepId)
   if (!step) return jsonError(res, 404, 'Plan step not found.')
   if (step.kind !== 'create_task') return jsonError(res, 403, 'This action type is not connected in this prototype.')
+  if (!dependenciesReady(plan, step)) return jsonError(res, 409, 'This step is waiting for an earlier step to complete.')
   const existing = db.prepare('SELECT id, title FROM tasks WHERE source_plan_id = ? AND source_step_id = ?').get(plan.id, step.id) as { id: string; title: string } | undefined
   if (existing) {
     if (step.status === 'done' && step.resultTaskId === existing.id && step.actionHash === actionHash(plan.id, step) && existing.title === step.taskTitle) {
@@ -262,11 +270,19 @@ app.post('/api/plans/:id/steps/:stepId/execute', (req, res) => {
   }
 
   const approvalId = step.approvalId
+  step.status = 'active'
+  step.startedAt = now
+  plan.status = 'running'
+  savePlan(plan)
+  recordAudit('step.started', 'plan_step', step.id, 'Started an approved plan step; execution is in progress.')
   const execute = db.transaction(() => {
     const id = randomUUID()
     db.prepare('INSERT INTO tasks (id, title, created_at, source_plan_id, source_step_id) VALUES (?, ?, ?, ?, ?)')
       .run(id, step.taskTitle, now, plan.id, step.id)
     step.status = 'done'
+    step.completedAt = now
+    step.output = 'Created the approved local task.'
+    step.error = undefined
     step.resultTaskId = id
     step.approvalId = undefined
     step.expiresAt = undefined
@@ -287,6 +303,11 @@ app.post('/api/plans/:id/steps/:stepId/execute', (req, res) => {
     if (persistedPlan && persistedStep?.status === 'done' && task && persistedStep.resultTaskId === task.id && persistedStep.taskTitle === task.title && persistedStep.actionHash === actionHash(persistedPlan.id, persistedStep)) {
       return res.json({ plan: persistedPlan, taskId: task.id, replayed: true })
     }
+    step.status = 'failed'
+    step.error = 'Execution failed before a verified result was recorded.'
+    step.completedAt = new Date().toISOString()
+    plan.status = 'failed'
+    savePlan(plan)
     recordAudit('action.failed', 'plan_step', step.id, 'Approved local action failed; no success was recorded.')
     jsonError(res, 500, 'The action failed. No success was recorded; you can retry safely.')
   }
