@@ -8,6 +8,10 @@ test('without a model, Forge does not fabricate an answer and only creates task 
   assert.equal(plan.assistantOutput?.status, 'unavailable')
   assert.match(plan.assistantOutput?.answer ?? '', /language model hasn’t been configured/)
   assert.equal(plan.steps.length, 0)
+  const taskPlan = await draftPlan('Create local tasks to review the customer portal launch; collect feedback from support.')
+  assert.match(taskPlan.assistantOutput?.answer ?? '', /Task History/)
+  assert.doesNotMatch(taskPlan.assistantOutput?.answer ?? '', /below/)
+  assert.equal(taskPlan.steps.length, 2)
 })
 
 test('configured model returns a useful answer and deliverable independently from local tasks', async () => {

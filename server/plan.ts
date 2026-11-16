@@ -103,7 +103,7 @@ export async function draftPlan(request: string): Promise<Plan> {
   const assistantOutput: AssistantOutput = generated?.output ?? {
     status: 'unavailable',
     answer: localTitles.length
-      ? 'I can’t generate the requested answer or draft yet because a language model hasn’t been configured for Forge. No deliverable was created. The separate local task titles below are only to-dos; running one adds its title to this device, not the work you asked for.'
+      ? 'I can’t generate the requested answer or draft yet because a language model hasn’t been configured for Forge. No deliverable was created. The separate local task titles are available in Task History for review; they are only to-dos. Running one adds its title to this device, not the work you asked for.'
       : 'I can’t generate the requested answer or draft yet because a language model hasn’t been configured for Forge. No content or task was created.',
   }
   return {

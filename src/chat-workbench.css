@@ -25,9 +25,9 @@
 
 .chat-workbench {
   width: min(100%, 1320px);
-  max-width: 1320px;
-  grid-template-columns: minmax(0, 1fr) 266px;
-  gap: clamp(24px, 3.2vw, 48px);
+  max-width: 1060px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: stretch;
   margin: 0 auto;
   color: var(--chat-ink);
@@ -295,7 +295,6 @@
 .chat-workbench .composer-tool { color: #626a60; }
 .chat-workbench .composer-tool:hover:not(:disabled) { color: var(--chat-forest); background: #ebefe8; }
 .chat-workbench .composer-tool:disabled { color: #94968d; }
-.chat-workbench .context-toggle { border: 1px solid #e0ded3; border-radius: 8px; }
 .chat-workbench .send-button {
   height: 37px;
   padding: 0 13px;
@@ -308,42 +307,11 @@
 .chat-workbench .send-button:hover:not(:disabled) { background: var(--chat-forest-dark); }
 .chat-workbench .send-button:disabled { opacity: .55; }
 
-.chat-workbench .right-rail { align-content: start; gap: 11px; padding: 26px 0 0; }
-.rail-title { display: grid; gap: 5px; margin: 0 1px 2px; }
-.rail-title > span { color: #777a70; font-size: 8px; font-weight: 850; letter-spacing: .15em; }
-.rail-title > strong { color: var(--chat-ink); font: 500 19px/1.2 Georgia, 'Times New Roman', serif; }
-.chat-workbench .rail-card {
-  padding: 14px;
-  border-color: #e0ddd2;
-  border-radius: 11px;
-  background: rgba(255, 253, 247, .84);
-  box-shadow: 0 5px 17px rgba(57, 55, 39, .035);
-}
-.chat-workbench .rail-card-heading { color: var(--chat-ink); font-size: 11px; }
-.chat-workbench .rail-icon { color: var(--chat-forest); background: #e8eee7; }
-.chat-workbench .rail-card > p { color: #666e64; font-size: 10px; line-height: 1.6; }
-.chat-workbench .rail-divider { border-top-color: #e8e5da; }
-.chat-workbench .rail-meta-row { color: #6c7369; font-size: 9px; }
-.chat-workbench .rail-meta-row strong { color: #394139; font-size: 9px; }
-.chat-workbench .quick-card-title { color: #343b34; font-size: 10px; }
-.chat-workbench .quick-card-title svg { color: var(--chat-forest); }
-.chat-workbench .quick-stats strong { color: var(--chat-ink); font: 500 22px/1 Georgia, 'Times New Roman', serif; }
-.chat-workbench .quick-stats span { color: #6c7369; font-size: 9px; }
-.chat-workbench .text-link { color: #315d4d; font-size: 10px; }
-.chat-workbench .rail-disclosure { padding: 4px 3px; color: #626a61; font-size: 9px; line-height: 1.55; }
-.chat-workbench .rail-disclosure svg { color: var(--chat-forest); }
-.chat-workbench .context-drawer-header { color: var(--chat-ink); }
-
-@media (max-width: 1100px) {
-  .chat-workbench { grid-template-columns: minmax(0, 1fr) 238px; gap: 24px; }
-}
 
 @media (max-width: 860px) {
-  .chat-workbench { grid-template-columns: minmax(0, 1fr); max-width: 800px; }
+  .chat-workbench { max-width: 800px; }
   .chat-workbench.has-conversation .chat-column,
   .chat-workbench.new-conversation .chat-column { min-height: calc(100dvh - 152px); }
-  .chat-workbench .right-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 3px; }
-  .chat-workbench .rail-title, .chat-workbench .rail-disclosure { grid-column: 1 / -1; }
 }
 
 @media (max-width: 680px) {
@@ -393,7 +361,6 @@
   .chat-workbench .plan-details-content .plan-card-footer { align-items: flex-start; flex-direction: column; margin-inline: -11px; padding: 9px 11px; }
   .chat-workbench .plan-details-content .plan-card-footer > div { align-self: flex-end; }
   .chat-workbench .composer { bottom: 8px; padding: 10px 10px 9px; border-radius: 12px; }
-  .chat-workbench:has(.plan-details[open]) .composer { position: static; bottom: auto; }
   .composer-label-row { margin-bottom: 5px; font-size: 7px; }
   .composer-label-row span:last-child { display: none; }
   .composer-context-note { margin: 0 1px 6px; font-size: 8px; }
@@ -403,31 +370,59 @@
   .chat-workbench .composer-hint kbd { display: none; }
   .chat-workbench .composer-actions { gap: 4px; }
   .chat-workbench .composer-actions > .composer-count { display: none; }
-  .chat-workbench .composer-actions .context-toggle { display: grid; position: static; width: 27px; height: 27px; min-height: 27px; padding: 0; background: var(--chat-paper); box-shadow: none; }
   .chat-workbench .send-button { height: 33px; padding: 0 9px; font-size: 9px; white-space: nowrap; }
-  .chat-workbench .right-rail {
-    position: fixed;
-    inset: 0 0 0 auto;
-    z-index: 60;
-    display: grid;
-    align-content: start;
-    grid-template-columns: 1fr;
-    gap: 12px;
-    width: min(350px, calc(100vw - 34px));
-    max-width: none;
-    height: 100dvh;
-    overflow-y: auto;
-    padding: 18px;
-    border-left: 1px solid #dcd9ce;
-    background: var(--chat-canvas);
-    box-shadow: -18px 0 45px rgba(37, 48, 41, .14);
-    transform: translateX(105%);
-    transition: transform .22s ease;
-  }
-  .chat-workbench .right-rail.context-open { transform: translateX(0); }
-  .chat-workbench .rail-title, .chat-workbench .rail-disclosure { grid-column: auto; }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
   .starter-card, .starter-arrow { transition: none; }
+}
+
+.history-task-workflow {
+  overflow: hidden;
+  border: 1px solid #dedbd0;
+  border-radius: 11px;
+  background: var(--chat-paper);
+}
+.history-task-workflow .plan-summary { min-height: 58px; padding: 11px 13px; }
+.history-task-workflow .plan-summary-icon { color: var(--chat-forest); background: #e9eee7; }
+.history-task-workflow .plan-summary-copy strong { color: var(--chat-ink); font-size: 12px; }
+.history-task-workflow .plan-summary-copy small { color: #626a60; font-size: 9px; }
+.history-task-workflow .plan-summary .plan-status { font-size: 8px; }
+.history-task-workflow .plan-details-content { border-top-color: #e9e5da; }
+.history-task-workflow .progress-track strong { color: var(--chat-ink); }
+.history-task-workflow .progress-track small { color: #626a60; }
+.history-task-workflow .steps-heading strong { color: var(--chat-ink); }
+.history-task-workflow .steps-heading span { color: #626a60; }
+.history-task-workflow .plan-details-content .step-content p,
+.history-task-workflow .plan-details-content .step-details summary,
+.history-task-workflow .plan-details-content .step-details p { color: #626a60; }
+.history-task-workflow .plan-details-content .step-details summary { color: #365f50; }
+.history-task-workflow .approval-expiry { color: #76592c; }
+.history-task-workflow .plan-details-content .step-content input { color: #30372f; }
+.history-task-workflow .plan-details-content .plan-step { grid-template-columns: 27px minmax(0, 1fr) auto; gap: 10px; padding: 14px 1px; }
+.history-task-workflow .plan-details-content .step-controls { min-width: 146px; }
+.history-task-workflow .plan-details-content .approve-button,
+.history-task-workflow .plan-details-content .run-button,
+.history-task-workflow .plan-details-content .quiet-button,
+.history-task-workflow .plan-details-content .save-plan-button { min-height: 32px; border-radius: 8px; font-size: 10px; }
+.history-task-workflow .plan-details-content .approve-button { color: var(--chat-forest); border-color: #d4dfd4; background: #f5f8f2; }
+.history-task-workflow .plan-details-content .approve-button:hover:not(:disabled) { border-color: #aabca9; background: #edf3ea; }
+.history-task-workflow .plan-details-content .run-button { border-color: var(--chat-forest); background: var(--chat-forest); }
+.history-task-workflow .plan-details-content .run-button:hover:not(:disabled) { background: var(--chat-forest-dark); }
+.history-task-workflow .plan-details-content .plan-card-footer { border-top-color: #e9e5da; background: #fbf9f2; }
+.history-task-workflow .plan-details-content .save-plan-button { color: var(--chat-forest); border-color: #d9ddd2; background: #fffefa; }
+.plan-history-header .plan-history-icon { color: var(--chat-forest); background: #e9eee7; }
+.plan-history-header .plan-history-main strong { color: var(--chat-ink); font-size: 12px; }
+.plan-history-header .plan-history-main span { color: #626a60; font-size: 9px; }
+.history-task-workflow .plan-details-content .plan-step { grid-template-columns: 27px minmax(0, 1fr) auto; }
+@media (max-width: 680px) {
+  .history-task-workflow .plan-details-content { padding: 0 11px 10px; }
+  .history-task-workflow .progress-track { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; max-width: 100%; min-width: 0; overflow: visible; }
+  .history-task-workflow .progress-track li { min-width: 0; }
+  .history-task-workflow .progress-track li:not(:last-child)::after { display: none; }
+  .history-task-workflow .plan-details-content .plan-step { grid-template-columns: 25px minmax(0, 1fr); gap: 8px; padding: 13px 0; }
+  .history-task-workflow .plan-details-content .step-controls { grid-column: 2; justify-content: flex-start; min-width: 0; padding: 1px 6px 0; }
+  .history-task-workflow .plan-details-content .plan-card-footer { align-items: flex-start; flex-direction: column; margin-inline: -11px; padding: 9px 11px; }
+  .history-task-workflow .plan-details-content .plan-card-footer > div { align-self: flex-end; }
 }

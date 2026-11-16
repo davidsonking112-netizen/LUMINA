@@ -34,7 +34,7 @@ test('desktop navigation collapses, expands and opens each requested workspace s
   await expect(page.getByText('Not connected', { exact: true })).toHaveCount(4)
 })
 
-test('mobile sidebar and task-details rail open as drawers, close with Escape and fit the viewport', async ({ page }) => {
+test('mobile sidebar works and Chat has no task-details drawer or horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   const menuToggle = page.getByRole('button', { name: 'Open navigation' })
@@ -56,20 +56,10 @@ test('mobile sidebar and task-details rail open as drawers, close with Escape an
   await page.keyboard.press('Control+k')
   await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toBeVisible()
   await expect(page.getByLabel('Message Forge')).toBeFocused()
-  await page.getByRole('button', { name: 'Open task details' }).click()
-  const context = page.getByRole('dialog', { name: 'Task details' })
-  await expect(context).toHaveClass(/context-open/)
-  await expect(page.locator('header.topbar')).toHaveAttribute('aria-hidden', 'true')
-  await expect(context.getByRole('button', { name: 'Close task details' })).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(context.getByRole('button', { name: 'View activity' })).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(context.getByRole('button', { name: 'Close task details' })).toBeFocused()
-  await page.keyboard.press('Escape')
-  const closedContext = page.locator('.right-rail')
-  await expect(closedContext).not.toHaveClass(/context-open/)
-  await expect(closedContext).toHaveAttribute('aria-hidden', 'true')
-  await expect(page.getByRole('button', { name: 'Open task details' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Open task details' })).toHaveCount(0)
+  await expect(page.getByText('Details & control')).toHaveCount(0)
+  await expect(page.locator('.right-rail')).toHaveCount(0)
+  await expect(page.locator('.composer')).toHaveCSS('position', 'sticky')
 
   const widths = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth }))
   expect(widths.document).toBeLessThanOrEqual(widths.viewport)
