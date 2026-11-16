@@ -30,6 +30,18 @@ export function isModelConfigured() {
   return Boolean(process.env.FORGE_LLM_API_KEY && process.env.FORGE_LLM_MODEL && process.env.FORGE_LLM_BASE_URL)
 }
 
+export function explicitlyRequestsNoSave(request: string) {
+  const normalized = request.replace(/[‘’]/g, "'").replace(/\s+/g, ' ').toLowerCase()
+  const negative = /(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt)/
+  const storageVerb = '(?:save|store|keep|retain|record|log)'
+  const object = '(?:(?:the|this|my|our|your|a|an|any)\\s+)?(?:(?:task|plan)\\s+)?(?:request|prompt|text|content|data)'
+  const direct = new RegExp(`\\b${negative.source}\\s+${storageVerb}\\s+${object}\\b`, 'i').test(normalized)
+  const pronoun = new RegExp(`\\b${negative.source}\\s+${storageVerb}\\s+(?:it|this|that)\\b`, 'i').test(normalized)
+  const unwanted = new RegExp(`\\b(?:i|we)\\s+${negative.source}\\s+want\\s+(?:you\\s+to\\s+)?${storageVerb}\\s+(?:${object}|it|this|that)\\b`, 'i').test(normalized)
+  const passive = /\b(?:(?:the|this|my|our|your)\s+)?(?:request|prompt|text|content|data)\s+(?:should|must|can|may)\s+not\s+be\s+(?:saved|stored|kept|retained|recorded|logged)\b/i.test(normalized)
+  return direct || pronoun || unwanted || passive
+}
+
 function splitIntoTasks(request: string) {
   const cleaned = request.trim().replace(/\s+/g, ' ')
   if (!asksForExplicitLocalTasks(cleaned)) return []
@@ -39,8 +51,25 @@ function splitIntoTasks(request: string) {
 
 function declinesLocalTasks(request: string) {
   const normalized = request.replace(/[‘’]/g, "'").replace(/\s+/g, ' ').toLowerCase()
-  return /\b(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt|not|never|avoid|without|no\s+need\s+to|refuse(?:s|d)?\s+to)\b.{0,80}\b(?:local\s+)?(?:tasks?|to-?dos?|todos?|task\s+list)\b/i.test(normalized)
-    || /\bno\s+(?:(?:local|separate|additional)\s+)?(?:tasks?|to-?dos?|todos?)\b/i.test(normalized)
+  const clauses = normalized.split(/(?:[;,.!?\n]+|\s+(?:but|however|instead|rather|and)\b)/i)
+  const taskPattern = /\b(?:local\s+)?(?:tasks?|to-?dos?|todos?|task\s+list)\b/
+  return clauses.some((clause, index) => {
+    const negated = /\b(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt|not|never|avoid|without|no\s+need\s+to|no|refuse(?:s|d)?\s+to)\b/i.test(clause)
+    const taskMention = taskPattern.test(clause)
+    const hasPreviousTaskMention = clauses.slice(0, index).some((previous) => taskPattern.test(previous))
+    const bareNegatedAction = /\b(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt|not|never|avoid|no)\s+(?:(?:actually|really|please)\s+)?(?:create|add|save|put|make)(?:\s+(?:any|anything|more|another|one))?\s*[.!?]*$/i.test(clause)
+    const negatedRequestSave = /\b(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt|not|never|avoid|no)\s+(?:(?:actually|really|please)\s+)?(?:save|store|keep|retain)\s+(?:(?:the|this|my|your|a|an)\s+)?(?:task\s+)?request(?:\s+(?:text|content|details))?\b/i.test(clause)
+    const bareWithoutAction = /\bwithout\s+(?:creating|adding|saving|putting|making)\s*[.!?]*$/i.test(clause)
+    const bareSkip = /^\s*skip(?:\s+(?:it|this|that|the\s+(?:local\s+)?task|the\s+to-?do))?\s*[.!?]*$/i.test(clause)
+    const bareTrailingNegation = /^\s*(?:(?:please|maybe|perhaps|possibly)\s+)?(?:(?:i|we)\s+(?:(?:am|are|was|were|do|does|did|will|would|should|could|might|may)\s+)?)?(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt|not|never|no|nope|no\s+need(?:\s+to)?|without)(?:\s+(?:now|after\s+all))?\s*[.!?]*$/i.test(clause)
+    const bareDoThat = /^\s*(?:(?:please|just)\s+)?(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt)\s+do\s+(?:it|this|that)\s*[.!?]*$/i.test(clause)
+    const reversal = /\b(?:changed|change|changing)\s+my\s+mind\b/i.test(clause)
+    const uncertainty = /\b(?:not\s+sure|unsure|uncertain)\b/i.test(clause)
+    if ((taskMention || hasPreviousTaskMention) && (bareNegatedAction || negatedRequestSave || bareWithoutAction || bareSkip || bareTrailingNegation || bareDoThat || reversal || uncertainty)) return true
+    if (!negated) return false
+    const negatedReference = /\b(?:create|creates|created|creating|add|adds|added|adding|save|saves|saved|saving|put|make|makes|made|making)\b.{0,40}\b(?:it|them|that|those|one|another)\b/i.test(clause)
+    return taskMention || negatedReference
+  })
 }
 
 export function asksForExplicitLocalTasks(request: string) {

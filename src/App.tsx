@@ -275,7 +275,7 @@ function App() {
   }
 
   async function deletePlan(plan: Plan) {
-    const confirmed = window.confirm('Delete this plan and any local tasks created from it? Request text and task details will be removed. Export your data first if you want to keep those details; generic approval and outcome entries remain in Activity.')
+    const confirmed = window.confirm('Delete this plan and any local tasks created from it? Request text and task details will be removed. Replay protection retains this request’s UUID and creation/deletion timestamps; the request hash and plan link are removed. Export your data first if you want to keep those details; generic approval and outcome entries remain in Activity.')
     if (!confirmed) return
     try {
       await api.deletePlan(plan.id)
@@ -283,7 +283,7 @@ function App() {
       setDirtyPlanIds((ids) => { const next = new Set(ids); next.delete(plan.id); return next })
       if (currentPlanId === plan.id) setCurrentPlanId('')
       await refreshData()
-      toast('Plan and linked local tasks deleted. Generic activity entries were retained.')
+      toast('Plan and linked local tasks deleted. Generic Activity entries and this request’s UUID/creation/deletion timestamps remain; request text, hash and plan link are removed.')
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not delete that plan.', 'error')
     }
@@ -306,7 +306,7 @@ function App() {
   }
 
   async function clearLocalData() {
-    const confirmed = window.confirm('Clear all Forge plans, tasks, memories, approvals and activity stored on this device? This removes database rows, but SQLite deletion is not guaranteed secure erasure.')
+    const confirmed = window.confirm('Clear saved Forge plans, tasks, memories, approvals and activity content on this device? Permission mode resets to approval. Replay protection retains request UUIDs and creation/deletion timestamps, plus an opaque workspace-generation marker and its update timestamp; request text, hashes and plan links are removed. SQLite deletion is not guaranteed secure erasure.')
     if (!confirmed) return
     try {
       await api.clearWorkspace()
@@ -314,7 +314,7 @@ function App() {
       setCurrentPlanId('')
       setDirtyPlanIds(new Set())
       await refreshData()
-      toast('Local workspace data cleared. SQLite deletion is not guaranteed secure erasure.')
+      toast('Workspace records cleared. Permission mode reset to approval. Replay protection retains request UUIDs and creation/deletion timestamps, plus an opaque workspace-generation marker and its update timestamp. SQLite deletion is not guaranteed secure erasure.')
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not clear local data.', 'error')
     }
@@ -488,9 +488,9 @@ function App() {
               <article className="settings-card"><div className="settings-icon"><LockKeyhole size={18} /></div><div><h2>Storage and privacy</h2><p>Plans, tasks, memories and activity live in a local SQLite database on this device. There is no account or cloud sync in this prototype.</p><span className="settings-status">Do not store passwords or payment details</span></div></article>
               <article className="settings-card"><div className="settings-icon"><Sparkles size={18} /></div><div><h2>Connected services</h2><p>No email, calendar or messaging service is connected. Nothing can be sent or changed outside this local workspace.</p><span className="settings-status">0 services connected</span></div></article>
               <article className="settings-card"><div className="settings-icon"><MessageSquare size={18} /></div><div><h2>Answer generation</h2><p>{modelConfigured ? 'A language model is configured for answers and text drafts. Your request text is sent to that provider over HTTPS.' : 'No language model is configured, so Forge cannot generate answers or drafts yet.'}</p><span className="settings-status">{modelConfigured ? 'Available' : 'Not configured'}</span></div></article>
-              <article className="settings-card"><div className="settings-icon"><FileText size={18} /></div><div><h2>Data lifecycle</h2><p>Export a JSON copy, or clear local workspace records. SQLite row deletion is not guaranteed secure erasure.</p><span className="settings-status">Local prototype · single device · no cloud backup</span></div></article>
+              <article className="settings-card"><div className="settings-icon"><FileText size={18} /></div><div><h2>Data lifecycle</h2><p>Export a JSON copy or clear workspace records. Clear resets permission mode to approval. Replay protection retains request UUIDs and creation/deletion timestamps, plus an opaque workspace-generation marker and its update timestamp. SQLite row deletion is not guaranteed secure erasure.</p><span className="settings-status">Local prototype · single device · no cloud backup</span></div></article>
             </div>
-            <div className="data-actions"><div><h2>Manage local data</h2><p>Export includes saved plan requests, tasks, memories, approvals, and activity. Clear removes those database rows and all retained activity.</p></div><div className="data-action-buttons"><button className="secondary-button" onClick={() => void exportLocalData()}><FileText size={14} /> Export JSON</button><button className="clear-data-button" onClick={() => void clearLocalData()}><Trash2 size={14} /> Clear all local data</button></div></div>
+            <div className="data-actions"><div><h2>Manage local data</h2><p>Export includes saved plan requests, tasks, memories, approvals, and activity. Clear removes those records and activity content, resets permission mode to approval, and retains request UUIDs and creation/deletion timestamps plus an opaque workspace-generation marker and its update timestamp for replay protection; request text, hashes, and plan links are removed.</p></div><div className="data-action-buttons"><button className="secondary-button" onClick={() => void exportLocalData()}><FileText size={14} /> Export JSON</button><button className="clear-data-button" onClick={() => void clearLocalData()}><Trash2 size={14} /> Clear workspace data</button></div></div>
           </section>}
         </div>
       </main>

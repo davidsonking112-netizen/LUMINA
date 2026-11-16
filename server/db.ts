@@ -31,9 +31,10 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS idempotency_keys (
     request_id TEXT PRIMARY KEY,
-    request_hash TEXT NOT NULL,
-    plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    created_at TEXT NOT NULL
+    request_hash TEXT,
+    plan_id TEXT,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
   );
   CREATE TABLE IF NOT EXISTS workspace_settings (
     key TEXT PRIMARY KEY,
@@ -72,6 +73,31 @@ if (!planColumns.some((column) => column.name === 'generation_mode')) {
 }
 if (!planColumns.some((column) => column.name === 'assistant_output_json')) {
   db.exec("ALTER TABLE plans ADD COLUMN assistant_output_json TEXT NOT NULL DEFAULT '{}'")
+}
+
+const idempotencyColumns = db.pragma('table_info(idempotency_keys)') as Array<{ name: string; notnull: number }>
+const idempotencyForeignKeys = db.pragma('foreign_key_list(idempotency_keys)') as Array<{ table: string }>
+if (!idempotencyColumns.some((column) => column.name === 'deleted_at')
+  || idempotencyColumns.some((column) => ['request_hash', 'plan_id'].includes(column.name) && column.notnull)
+  || idempotencyForeignKeys.length > 0) {
+  const previousKeys = db.prepare('SELECT request_id, request_hash, plan_id, created_at FROM idempotency_keys').all() as Array<{ request_id: string; request_hash: string; plan_id: string; created_at: string }>
+  db.transaction(() => {
+    db.exec('ALTER TABLE idempotency_keys RENAME TO idempotency_keys_legacy')
+    db.exec(`CREATE TABLE idempotency_keys (
+      request_id TEXT PRIMARY KEY,
+      request_hash TEXT,
+      plan_id TEXT,
+      created_at TEXT NOT NULL,
+      deleted_at TEXT
+    )`)
+    const hasPlan = db.prepare('SELECT id FROM plans WHERE id = ?')
+    const insert = db.prepare('INSERT INTO idempotency_keys (request_id, request_hash, plan_id, created_at, deleted_at) VALUES (?, ?, ?, ?, ?)')
+    for (const key of previousKeys) {
+      const planExists = Boolean(hasPlan.get(key.plan_id))
+      insert.run(key.request_id, planExists ? key.request_hash : null, planExists ? key.plan_id : null, key.created_at, planExists ? null : new Date().toISOString())
+    }
+    db.exec('DROP TABLE idempotency_keys_legacy')
+  })()
 }
 
 export function recordAudit(eventType: string, entityType: string, entityId: string, summary: string) {

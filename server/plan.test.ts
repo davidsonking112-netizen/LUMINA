@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { actionHash, asksForExplicitLocalTasks, draftPlan } from './plan.js'
+import { actionHash, asksForExplicitLocalTasks, draftPlan, explicitlyRequestsNoSave } from './plan.js'
 
 test('without a model, Forge does not fabricate an answer and only creates task suggestions when asked', async () => {
   const plan = await draftPlan('What is the capital of Ghana?')
@@ -28,10 +28,47 @@ test('local-task intent requires an explicit creation request and fails closed o
     'No need to create a task; provide the answer only.',
     'Do not add tasks to my to-do list.',
     'Help me review the plan without creating a task.',
+    'Create a local task to review the checklist, but do not actually create it.',
+    'Create a task to review the report, without saving it.',
+    'Create a local task to review the checklist, but do not save.',
+    'Create a local task to review the checklist, but do not save the request.',
+    'Create a local task to review the checklist, but do not save the request because this is private.',
+    'Create a task to review the report, however do not add.',
+    'Create a local task to review the checklist, but skip.',
+    'Create a local task to review the checklist, but do not.',
+    'Create a local task to review the checklist, but maybe not.',
+    'Create a local task to review the checklist, but don’t do that.',
+    'Create a local task to review the checklist, but don’t.',
+    'Create a local task to review the checklist, but please don’t.',
+    'Create a local task to review the checklist, but I changed my mind',
+    'Create a local task to review the checklist, but I am not sure',
+    'Create a local task to review the checklist, but I’m unsure',
+    'Create a local task to review the checklist, but I am not sure it is needed.',
+    'Create a local task to review the checklist, but maybe I should not.',
+    'Create a local task to review the checklist, but I’m not sure about it',
+    'Create a local task to review the checklist, but I changed my mind about it',
+    'I changed my mind about creating a local task to review the checklist',
+    'I am not sure whether to create a local task to review the checklist',
+    'I’m unsure whether to create a local task to review the checklist',
   ]) {
     assert.equal(asksForExplicitLocalTasks(prompt), false, prompt)
     assert.equal((await draftPlan(prompt)).steps.length, 0, prompt)
   }
+
+  assert.equal(asksForExplicitLocalTasks("Create a local task to review the checklist, but don't email the team"), true)
+  assert.equal(asksForExplicitLocalTasks("Create a local task to review the checklist and don't email the team"), true)
+  assert.equal(asksForExplicitLocalTasks("Create a local task to review the checklist, but don't email the team because this is private."), true)
+})
+
+test('explicit no-save instructions are recognized without matching unrelated email prohibitions', () => {
+  for (const prompt of [
+    'Create a local task to review the checklist, but do not save the request because this is private.',
+    'Please do not store my request.',
+    "I don't want you to save this request.",
+    'The request must not be retained.',
+  ]) assert.equal(explicitlyRequestsNoSave(prompt), true, prompt)
+
+  assert.equal(explicitlyRequestsNoSave("Create a local task to review the checklist, but don't email the team because this is private."), false)
 })
 
 test('configured model returns a useful answer and deliverable independently from local tasks', async () => {

@@ -103,6 +103,25 @@ test('Automatic mode is server-gated to explicit parser tasks and safely replays
       ['00000000-0000-4000-8000-000000000011', 'Do not create local tasks; just explain the plan.'],
       ['00000000-0000-4000-8000-000000000012', 'Please don’t create a local task for this.'],
       ['00000000-0000-4000-8000-000000000013', 'Help me review the plan without creating a task.'],
+      ['00000000-0000-4000-8000-000000000016', 'Create a local task to review the checklist, but do not actually create it.'],
+      ['00000000-0000-4000-8000-000000000017', 'Create a task to review the report, without saving it.'],
+      ['00000000-0000-4000-8000-000000000021', 'Create a local task to review the checklist, but do not save.'],
+      ['00000000-0000-4000-8000-000000000022', 'Create a task to review the report, however do not add.'],
+      ['00000000-0000-4000-8000-000000000023', 'Create a local task to review the checklist, but skip.'],
+      ['00000000-0000-4000-8000-000000000024', 'Create a local task to review the checklist, but do not.'],
+      ['00000000-0000-4000-8000-000000000025', 'Create a local task to review the checklist, but maybe not.'],
+      ['00000000-0000-4000-8000-000000000026', 'Create a local task to review the checklist, but don’t do that.'],
+      ['00000000-0000-4000-8000-000000000027', 'Create a local task to review the checklist, but don’t.'],
+      ['00000000-0000-4000-8000-000000000028', 'Create a local task to review the checklist, but please don’t.'],
+      ['00000000-0000-4000-8000-000000000029', 'Create a local task to review the checklist, but I changed my mind'],
+      ['00000000-0000-4000-8000-000000000031', 'Create a local task to review the checklist, but I am not sure'],
+      ['00000000-0000-4000-8000-000000000033', 'Create a local task to review the checklist, but I’m unsure'],
+      ['00000000-0000-4000-8000-000000000034', 'Create a local task to review the checklist, but I am not sure it is needed.'],
+      ['00000000-0000-4000-8000-000000000035', 'Create a local task to review the checklist, but maybe I should not.'],
+      ['00000000-0000-4000-8000-000000000036', 'Create a local task to review the checklist, but I’m not sure about it'],
+      ['00000000-0000-4000-8000-000000000037', 'Create a local task to review the checklist, but I changed my mind about it'],
+      ['00000000-0000-4000-8000-000000000038', 'I changed my mind about creating a local task to review the checklist'],
+      ['00000000-0000-4000-8000-000000000039', 'I’m unsure whether to create a local task to review the checklist'],
     ] as const) {
       const negated = await request(app).post('/api/plans').send({ request: prompt, requestId }).expect(201)
       assert.equal(negated.body.steps.length, 0, prompt)
@@ -126,13 +145,154 @@ test('Automatic mode is server-gated to explicit parser tasks and safely replays
     await request(app).post('/api/plans').send({ ...explicitRequest, request: 'Create a local task to send an email.' }).expect(409)
     assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 1)
 
+    const deletedPlanRequest = { request: 'Create a local task to test plan deletion replay.', requestId: '00000000-0000-4000-8000-000000000018' }
+    const deletedPlan = await request(app).post('/api/plans').send(deletedPlanRequest).expect(201)
+    await request(app).delete(`/api/plans/${deletedPlan.body.id}`).expect(204)
+    await request(app).post('/api/plans').send(deletedPlanRequest).expect(410)
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 1)
+
+    const unrelatedProhibition = await request(app).post('/api/plans').send({
+      request: "Create a local task to review the checklist, but don't email the team",
+      requestId: '00000000-0000-4000-8000-000000000032',
+    }).expect(201)
+    assert.equal(unrelatedProhibition.body.steps[0].status, 'done')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 2)
+    const unrelatedAndProhibition = await request(app).post('/api/plans').send({
+      request: "Create a local task to review the checklist and don't email the team",
+      requestId: '00000000-0000-4000-8000-000000000040',
+    }).expect(201)
+    assert.equal(unrelatedAndProhibition.body.steps[0].status, 'done')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 3)
+    const unrelatedReasonProhibition = await request(app).post('/api/plans').send({
+      request: "Create a local task to review the checklist, but don't email the team because this is private.",
+      requestId: '00000000-0000-4000-8000-000000000041',
+    }).expect(201)
+    assert.equal(unrelatedReasonProhibition.body.steps[0].status, 'done')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 4)
+
+    const clearedRequest = { request: 'Create a local task to test data-clear replay.', requestId: '00000000-0000-4000-8000-000000000019' }
+    await request(app).post('/api/plans').send(clearedRequest).expect(201)
+    await request(app).delete('/api/data').expect(204)
+    await request(app).post('/api/plans').send(clearedRequest).expect(410)
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
+
     await request(app).put('/api/settings').send({ permissionMode: 'suggest' }).expect(200)
-    const suggested = await request(app).post('/api/plans').send({ request: 'Create a local task to review the next release.', requestId: '00000000-0000-4000-8000-000000000015' }).expect(201)
+    const suggested = await request(app).post('/api/plans').send({ request: 'Create a local task to review the next release.', requestId: '00000000-0000-4000-8000-000000000020' }).expect(201)
     assert.equal(suggested.body.steps[0].status, 'pending')
     await request(app).post(`/api/plans/${suggested.body.id}/steps/${suggested.body.steps[0].id}/approve`).expect(403)
     await request(app).post(`/api/plans/${suggested.body.id}/steps/${suggested.body.steps[0].id}/execute`).expect(403)
-    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 1)
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
   } finally {
+    globalThis.fetch = previousFetch
+    for (const key of keys) {
+      const value = previous[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await request(app).put('/api/settings').send({ permissionMode: previousMode }).expect(200)
+    await request(app).delete('/api/data').expect(204)
+  }
+})
+
+test('explicit no-save requests are rejected before generation or persistence', async () => {
+  const keys = ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'] as const
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const previousFetch = globalThis.fetch
+  const previousMode = (await request(app).get('/api/settings').expect(200)).body.permissionMode as string
+  const refusedRequests = [
+    { request: 'Create a local task to review the private checklist, but do not save the request.', requestId: '00000000-0000-4000-8000-000000000044' },
+    { request: 'Create a local task to review the private checklist, but do not save the request because this is private.', requestId: '00000000-0000-4000-8000-000000000045' },
+  ]
+  let modelCalls = 0
+
+  try {
+    await request(app).delete('/api/data').expect(204)
+    await request(app).put('/api/settings').send({ permissionMode: 'automatic' }).expect(200)
+    process.env.FORGE_LLM_BASE_URL = 'https://model.example/v1'
+    process.env.FORGE_LLM_API_KEY = 'test-only-secret'
+    process.env.FORGE_LLM_MODEL = 'test-model'
+    globalThis.fetch = async () => {
+      modelCalls += 1
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'Should not be generated.', localTasks: [] }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    for (const refused of refusedRequests) {
+      const rejected = await request(app).post('/api/plans').send(refused).expect(400)
+      assert.match(rejected.body.error, /cannot process a request that asks not to be saved/i)
+      assert.equal(rejected.body.error.includes(refused.request), false)
+    }
+    assert.equal(modelCalls, 0)
+
+    assert.deepEqual((await request(app).get('/api/plans').expect(200)).body, [])
+    assert.deepEqual((await request(app).get('/api/tasks').expect(200)).body, [])
+    assert.deepEqual((await request(app).get('/api/activity').expect(200)).body, [])
+    const exported = (await request(app).get('/api/export').expect(200)).body
+    assert.deepEqual(exported.plans, [])
+    assert.deepEqual(exported.tasks, [])
+    assert.deepEqual(exported.activity, [])
+    for (const refused of refusedRequests) assert.equal(JSON.stringify(exported).includes(refused.request), false)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM plans').get() as { count: number }).count, 0)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM tasks').get() as { count: number }).count, 0)
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM audit_events').get() as { count: number }).count, 0)
+    for (const refused of refusedRequests) {
+      assert.equal((db.prepare('SELECT COUNT(*) AS count FROM idempotency_keys WHERE request_id = ?').get(refused.requestId) as { count: number }).count, 0)
+    }
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const key of keys) {
+      const value = previous[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await request(app).delete('/api/data').expect(204)
+    await request(app).put('/api/settings').send({ permissionMode: previousMode }).expect(200)
+  }
+})
+
+test('clearing workspace data cancels an in-flight plan before it can persist', async () => {
+  const keys = ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'] as const
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const previousFetch = globalThis.fetch
+  const previousMode = (await request(app).get('/api/settings').expect(200)).body.permissionMode as string
+  let releaseModel = () => {}
+  let markModelStarted = () => {}
+  let inFlight: Promise<unknown> | undefined
+  const modelStarted = new Promise<void>((resolve) => { markModelStarted = resolve })
+  const modelGate = new Promise<void>((resolve) => { releaseModel = resolve })
+
+  try {
+    await request(app).delete('/api/data').expect(204)
+    await request(app).put('/api/settings').send({ permissionMode: 'automatic' }).expect(200)
+    const generationBeforeClear = (db.prepare('SELECT value FROM workspace_settings WHERE key = ?').get('dataGeneration') as { value: string }).value
+    process.env.FORGE_LLM_BASE_URL = 'https://model.example/v1'
+    process.env.FORGE_LLM_API_KEY = 'test-only-secret'
+    process.env.FORGE_LLM_MODEL = 'test-model'
+    globalThis.fetch = async () => {
+      markModelStarted()
+      await modelGate
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'The request was completed.', localTasks: [] }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    const pendingRequest = request(app).post('/api/plans').send({
+      request: 'Create a local task to review the launch checklist.',
+      requestId: '00000000-0000-4000-8000-000000000030',
+    }).expect(409).then((response) => response)
+    inFlight = pendingRequest
+    await modelStarted
+    await request(app).delete('/api/data').expect(204)
+    assert.equal((await request(app).get('/api/settings').expect(200)).body.permissionMode, 'approve')
+    const generationAfterClear = (db.prepare('SELECT value FROM workspace_settings WHERE key = ?').get('dataGeneration') as { value: string }).value
+    assert.notEqual(generationAfterClear, generationBeforeClear)
+    releaseModel()
+
+    const result = await pendingRequest
+    assert.match(result.body.error, /workspace data was cleared/i)
+    assert.deepEqual((await request(app).get('/api/plans').expect(200)).body, [])
+    assert.deepEqual((await request(app).get('/api/tasks').expect(200)).body, [])
+    assert.deepEqual((await request(app).get('/api/activity').expect(200)).body, [])
+  } finally {
+    releaseModel()
+    await inFlight?.catch(() => undefined)
     globalThis.fetch = previousFetch
     for (const key of keys) {
       const value = previous[key]

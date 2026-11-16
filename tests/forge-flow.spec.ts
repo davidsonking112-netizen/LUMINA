@@ -81,7 +81,7 @@ test('plan review, exact approval, task execution, export and deletion history w
   page.once('dialog', (dialog) => void dialog.accept())
   const planToDelete = page.getByRole('article').filter({ hasText: requestText })
   await planToDelete.getByRole('button', { name: 'Delete plan and linked local tasks' }).click()
-  await expect(page.getByText('Plan and linked local tasks deleted. Generic activity entries were retained.')).toBeVisible()
+  await expect(page.getByText('Plan and linked local tasks deleted. Generic Activity entries and this request’s UUID/creation/deletion timestamps remain; request text, hash and plan link are removed.')).toBeVisible()
   await page.getByRole('tab', { name: 'Activity' }).click()
   await expect(page.getByText('Details removed').first()).toBeVisible()
   await expect(page.getByText(requestText)).toHaveCount(0)

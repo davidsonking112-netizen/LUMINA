@@ -2,7 +2,7 @@ import express from 'express'
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { db, recordAudit } from './db.js'
-import { actionHash, asksForExplicitLocalTasks, draftPlan, isModelConfigured } from './plan.js'
+import { actionHash, asksForExplicitLocalTasks, draftPlan, explicitlyRequestsNoSave, isModelConfigured } from './plan.js'
 import { actionMayRun, registeredAction } from './policy.js'
 import type { AuditEvent, Connector, ForgeTask, MemoryEntry, PermissionMode, Plan, PlanStep } from '../src/types.js'
 
@@ -65,6 +65,17 @@ function jsonError(res: express.Response, status: number, message: string) {
 function currentPermissionMode(): PermissionMode {
   const row = db.prepare('SELECT value FROM workspace_settings WHERE key = ?').get('permissionMode') as { value: string } | undefined
   return row?.value === 'suggest' || row?.value === 'automatic' ? row.value : 'approve'
+}
+
+function currentDataGeneration() {
+  const row = db.prepare('SELECT value FROM workspace_settings WHERE key = ?').get('dataGeneration') as { value: string } | undefined
+  return row?.value ?? 'initial'
+}
+
+function advanceDataGeneration() {
+  db.prepare(`INSERT INTO workspace_settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+    .run('dataGeneration', randomUUID(), new Date().toISOString())
 }
 
 function invalidateApprovalsForModeChange() {
@@ -184,6 +195,11 @@ app.get('/api/export', (_req, res) => {
 
 app.delete('/api/data', (_req, res) => {
   db.transaction(() => {
+    advanceDataGeneration()
+    const now = new Date().toISOString()
+    db.prepare(`INSERT INTO workspace_settings (key, value, updated_at) VALUES ('permissionMode', 'approve', ?)
+      ON CONFLICT(key) DO UPDATE SET value = 'approve', updated_at = excluded.updated_at`).run(now)
+    db.prepare('UPDATE idempotency_keys SET request_hash = NULL, plan_id = NULL, deleted_at = ? WHERE deleted_at IS NULL').run(now)
     db.prepare('DELETE FROM approvals').run()
     db.prepare('DELETE FROM tasks').run()
     db.prepare('DELETE FROM plans').run()
@@ -196,6 +212,7 @@ app.delete('/api/data', (_req, res) => {
 app.post('/api/plans', async (req, res) => {
   const parsed = requestSchema.safeParse(req.body)
   if (!parsed.success) return jsonError(res, 400, 'Enter a request between 2 and 2,000 characters.')
+  if (explicitlyRequestsNoSave(parsed.data.request)) return jsonError(res, 400, 'This workspace cannot process a request that asks not to be saved. Nothing was saved or sent for generation.')
   const explicitTaskIntent = asksForExplicitLocalTasks(parsed.data.request)
   const modeAtStart = currentPermissionMode()
   if (modeAtStart === 'automatic' && explicitTaskIntent && !parsed.data.requestId) {
@@ -203,13 +220,16 @@ app.post('/api/plans', async (req, res) => {
   }
   const requestHash = createHash('sha256').update(parsed.data.request).digest('hex')
   if (parsed.data.requestId) {
-    const prior = db.prepare('SELECT request_hash, plan_id FROM idempotency_keys WHERE request_id = ?').get(parsed.data.requestId) as { request_hash: string; plan_id: string } | undefined
+    const prior = db.prepare('SELECT request_hash, plan_id, deleted_at FROM idempotency_keys WHERE request_id = ?').get(parsed.data.requestId) as { request_hash: string | null; plan_id: string | null; deleted_at: string | null } | undefined
     if (prior) {
+      if (prior.deleted_at || !prior.plan_id) return jsonError(res, 410, 'This request ID belongs to a deleted plan; use a new UUID to start a new request.')
       if (prior.request_hash !== requestHash) return jsonError(res, 409, 'This request ID was already used for different content; no new action was taken.')
       const priorPlan = loadPlan(prior.plan_id)
       if (priorPlan) return res.status(200).json(priorPlan)
+      return jsonError(res, 410, 'This request ID belongs to a deleted plan; use a new UUID to start a new request.')
     }
   }
+  const dataGenerationAtStart = currentDataGeneration()
   let plan: Plan
   try {
     plan = await draftPlan(parsed.data.request, { automaticTasksOnly: modeAtStart === 'automatic' && explicitTaskIntent })
@@ -217,12 +237,15 @@ app.post('/api/plans', async (req, res) => {
     return jsonError(res, 502, 'Forge could not generate an answer with the configured model. No answer or task list was saved.')
   }
   const persisted = db.transaction(() => {
+    if (currentDataGeneration() !== dataGenerationAtStart) return { cleared: true as const }
     if (parsed.data.requestId) {
-      const prior = db.prepare('SELECT request_hash, plan_id FROM idempotency_keys WHERE request_id = ?').get(parsed.data.requestId) as { request_hash: string; plan_id: string } | undefined
+      const prior = db.prepare('SELECT request_hash, plan_id, deleted_at FROM idempotency_keys WHERE request_id = ?').get(parsed.data.requestId) as { request_hash: string | null; plan_id: string | null; deleted_at: string | null } | undefined
       if (prior) {
+        if (prior.deleted_at || !prior.plan_id) return { deleted: true as const }
         if (prior.request_hash !== requestHash) return { conflict: true as const }
         const priorPlan = loadPlan(prior.plan_id)
         if (priorPlan) return { plan: priorPlan, replayed: true as const }
+        return { deleted: true as const }
       }
     }
     const mode = currentPermissionMode()
@@ -234,7 +257,7 @@ app.post('/api/plans', async (req, res) => {
       && plan.steps.every((step) => step.provenance === 'user_request_parser' && actionMayRun(step.kind, mode, true))
     const now = new Date().toISOString()
     savePlan(plan)
-    if (parsed.data.requestId) db.prepare('INSERT INTO idempotency_keys (request_id, request_hash, plan_id, created_at) VALUES (?, ?, ?, ?)')
+    if (parsed.data.requestId) db.prepare('INSERT INTO idempotency_keys (request_id, request_hash, plan_id, created_at, deleted_at) VALUES (?, ?, ?, ?, NULL)')
       .run(parsed.data.requestId, requestHash, plan.id, now)
     if (mayRunAutomatically) {
       for (const step of plan.steps) {
@@ -258,13 +281,15 @@ app.post('/api/plans', async (req, res) => {
       savePlan(plan)
     }
     const summary = plan.assistantOutput?.status === 'generated'
-      ? 'Generated answer saved locally; no external action was taken.'
+      ? mayRunAutomatically ? 'Generated answer saved locally; explicit low-risk local tasks were added automatically.' : 'Generated answer saved locally; no external action was taken.'
       : plan.steps.length
         ? mayRunAutomatically ? 'Explicit low-risk local tasks were added automatically.' : 'Answer unavailable; local task titles saved separately for review. No task was run.'
         : 'Answer unavailable; no content or tasks were created.'
     recordAudit('plan.created', 'plan', plan.id, summary)
     return { plan, replayed: false as const }
   })()
+  if ('cleared' in persisted) return jsonError(res, 409, 'Workspace data was cleared while this request was being prepared; submit it again if you still want to save it.')
+  if ('deleted' in persisted) return jsonError(res, 410, 'This request ID belongs to a deleted plan; use a new UUID to start a new request.')
   if ('conflict' in persisted) return jsonError(res, 409, 'This request ID was already used for different content; no new action was taken.')
   res.status(persisted.replayed ? 200 : 201).json(persisted.plan)
 })
@@ -279,6 +304,7 @@ app.delete('/api/plans/:id', (req, res) => {
   const plan = loadPlan(req.params.id)
   if (!plan) return jsonError(res, 404, 'Plan not found.')
   db.transaction(() => {
+    db.prepare('UPDATE idempotency_keys SET request_hash = NULL, plan_id = NULL, deleted_at = ? WHERE plan_id = ? AND deleted_at IS NULL').run(new Date().toISOString(), plan.id)
     db.prepare('DELETE FROM tasks WHERE source_plan_id = ?').run(plan.id)
     db.prepare('DELETE FROM plans WHERE id = ?').run(plan.id)
     recordAudit('plan.deleted', 'plan', plan.id, 'Plan and associated local task records were deleted; request and task details were removed.')
