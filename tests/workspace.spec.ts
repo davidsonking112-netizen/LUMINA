@@ -81,6 +81,6 @@ test('Home quick starts prefill a request but wait for the user to submit it', a
   await page.getByRole('button', { name: new RegExp(prompt) }).click()
   await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toBeVisible()
   await expect(page.getByLabel('Message Forge')).toHaveValue(prompt)
-  await expect(page.getByRole('button', { name: 'Plan it' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Create plan' })).toBeEnabled()
   await expect(page.getByText('BASIC LOCAL DRAFT')).toHaveCount(0)
 })

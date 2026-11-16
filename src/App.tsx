@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import {
-  Activity, ArrowDown, ArrowRight, Blocks, BookOpen, CalendarClock, Check, CheckCheck,
+  Activity, ArrowDown, ArrowRight, Blocks, BookOpen, CalendarClock, Check, CheckCheck, ChevronDown,
   CircleHelp, Clock3, FileText, Files, FolderOpen, History, Home, Inbox, LoaderCircle,
   ListTodo, LockKeyhole, Menu, MessageSquare, Mic, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
   PanelRight, Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen, Trash2, X,
@@ -9,6 +9,7 @@ import { api } from './api'
 import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
 import './App.css'
 import './feature.css'
+import './chat-refresh.css'
 
 type Section = 'home' | 'chat' | 'inbox' | 'projects' | 'automations' | 'memory' | 'connected' | 'files' | 'history' | 'settings'
 type HistoryTab = 'plans' | 'tasks' | 'activity'
@@ -397,21 +398,19 @@ function App() {
             </div>
             <div className="dashboard-honesty"><LockKeyhole size={15} /><span>This prototype only creates and manages plans and tasks on this device. Connected services and automations are not active.</span></div>
           </section>}
-          {section === 'chat' && <section className="chat-layout">
+          {section === 'chat' && <section className={`chat-layout ${currentPlan ? 'has-conversation' : 'new-conversation'}`}>
             <div className="chat-column" aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen}>
-              <div className="chat-heading"><div className="forge-orb"><Sparkles size={20} /></div><div><p className="eyebrow">FORGE</p><h1>What’s on your mind?</h1><p className="heading-subtitle">Describe a goal and Forge will turn it into a plan you can review.</p></div></div>
+              {!currentPlan && <div className="chat-heading"><div className="forge-orb"><Sparkles size={20} /></div><div><p className="eyebrow">FORGE</p><h1>What’s on your mind?</h1><p className="heading-subtitle">Describe a goal and Forge will turn it into a plan you can review.</p></div></div>}
               {currentPlan ? <div className="conversation-block">
-                <div className="message-bubble user-bubble"><span className="message-label">YOU</span><p>{currentPlan.request}</p></div>
-                <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><strong>Forge</strong><span>Plan draft · review before running</span></div><PlanCard plan={currentPlan} loading={loading} hasUnsavedEdits={dirtyPlanIds.has(currentPlan.id)} onTitleChange={updateStepTitle} onSave={() => void savePlan(currentPlan)} onApprove={(stepId) => void approveStep(currentPlan, stepId)} onDeny={(stepId) => void denyStep(currentPlan, stepId)} onExecute={(stepId) => void executeStep(currentPlan, stepId)} /></div></div>
+                <div className="message-bubble user-bubble"><span className="message-label">You</span><p>{currentPlan.request}</p></div>
+                <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><strong>Forge</strong><span>Local plan · review before running</span></div><p className="assistant-answer">This is a plan of local to-dos, not the work product itself. Running an approved step adds only its title to Forge’s task list on this device; it does not create a document or contact an external service.</p><PlanCard plan={currentPlan} loading={loading} hasUnsavedEdits={dirtyPlanIds.has(currentPlan.id)} onTitleChange={updateStepTitle} onSave={() => void savePlan(currentPlan)} onApprove={(stepId) => void approveStep(currentPlan, stepId)} onDeny={(stepId) => void denyStep(currentPlan, stepId)} onExecute={(stepId) => void executeStep(currentPlan, stepId)} /></div></div>
               </div> : loading ? <div className="empty-prompt planning-state" role="status"><div className="empty-prompt-icon"><LoaderCircle className="spin" size={19} /></div><p>Thinking through the steps…</p><span>Nothing is running. You’ll review the draft first.</span></div> : <div className="empty-prompt"><div className="empty-prompt-icon"><MessageSquare size={19} /></div><p>Start with a goal or question.</p><span>Forge will turn it into a clear, editable plan before anything important happens.</span></div>}
               <form className="composer" onSubmit={createPlan}>
                 <label className="sr-only" htmlFor="request">Message Forge</label>
-                <textarea ref={requestInputRef} id="request" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Ask Forge to help with something…" rows={3} />
-                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Actions wait for your approval.</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Plan it</span></button></div></div>
+                <textarea ref={requestInputRef} id="request" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Describe a task to plan…" rows={2} />
+                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Approval and running are separate steps.</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><button ref={contextToggleRef} className="context-toggle composer-tool" type="button" aria-label="Open task details" title="Task details" aria-expanded={mobileContextOpen} aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /></button><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Create plan</span></button></div></div>
               </form>
-              <p className="prototype-note">Forge plans first, then waits for your approval before important actions.</p>
             </div>
-            <button ref={contextToggleRef} className="context-toggle" aria-label="Open task details" aria-expanded={mobileContextOpen} aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /> Task details</button>
             {mobileContextOpen && <button className="context-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMobileContextOpen(false)} />}
             <aside ref={taskDetailsRef} className={`right-rail ${mobileContextOpen ? 'context-open' : ''}`} aria-label="Task details" role={mobileViewport ? 'dialog' : 'complementary'} aria-modal={mobileViewport && mobileContextOpen ? true : undefined} aria-hidden={mobileViewport && !mobileContextOpen} inert={mobileViewport && !mobileContextOpen}><div className="context-drawer-header"><strong>Task details</strong><button className="icon-button" aria-label="Close task details" onClick={() => setMobileContextOpen(false)}><X size={17} /></button></div><div className="rail-card"><div className="rail-card-heading"><div className="rail-icon"><ShieldCheck size={17} /></div><strong>Your control comes first</strong></div><p>Review each action before it runs. Editing a plan clears any earlier approval.</p><div className="rail-divider" /><div className="rail-meta-row"><span>Current mode</span><strong>Review every action</strong></div><div className="rail-meta-row"><span>Approval window</span><strong>10 minutes</strong></div></div><div className="rail-card"><div className="quick-card-title"><FileText size={16} /><strong>Sources & files</strong></div><div className="rail-meta-row"><span>Sources</span><strong>None in this draft</strong></div><div className="rail-meta-row"><span>Files</span><strong>Not attached</strong></div></div><div className="rail-card quick-card"><div className="quick-card-title"><Clock3 size={16} /><strong>Today so far</strong></div><div className="quick-stats"><div><strong>{tasks.length}</strong><span>tasks</span></div><div><strong>{activity.length}</strong><span>activity events</span></div></div><button className="text-link" onClick={() => { setHistoryTab('activity'); setSection('history'); setMobileContextOpen(false) }}>View activity <ArrowRight size={14} /></button></div><div className="rail-disclosure"><LockKeyhole size={14} /><span>This prototype stores data locally on this device. Don’t save secrets here.</span></div></aside>
           </section>}
@@ -469,59 +468,58 @@ function App() {
 }
 
 function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApprove, onDeny, onExecute }: { plan: Plan; loading: boolean; hasUnsavedEdits: boolean; onTitleChange: (planId: string, stepId: string, value: string) => void; onSave: () => void; onApprove: (stepId: string) => void; onDeny: (stepId: string) => void; onExecute: (stepId: string) => void }) {
+  const [detailsOpen, setDetailsOpen] = useState(true)
   const createdTasks = plan.steps.filter((step) => step.status === 'done').length
   const waitingForReview = plan.steps.some((step) => step.status === 'pending')
   const waitingToRun = plan.steps.some((step) => step.status === 'approved')
+  const reviewCount = plan.steps.filter((step) => step.status === 'pending').length
   const allResolved = plan.steps.every((step) => step.status === 'done' || step.status === 'denied')
   const taskStage = allResolved ? createdTasks ? `${createdTasks} local ${createdTasks === 1 ? 'task' : 'tasks'} created` : 'Declined · no tasks created' : waitingToRun || createdTasks > 0 ? `${createdTasks} of ${plan.steps.length} tasks created` : 'No task has run'
+  const detailStatus = reviewCount ? `${reviewCount} ${reviewCount === 1 ? 'action' : 'actions'} awaiting review` : taskStage
   return (
-    <div className="plan-card">
-      <ol className="progress-track" aria-label="Local task progress">
-        <li className="complete"><span className="progress-dot"><Check size={12} /></span><span><strong>Plan ready</strong><small>Local draft</small></span></li>
-        <li className={waitingForReview ? 'active' : 'complete'}><span className="progress-dot">{waitingForReview ? <ShieldCheck size={12} /> : <Check size={12} />}</span><span><strong>{waitingForReview ? 'Your review' : 'Review done'}</strong><small>{waitingForReview ? 'Waiting for you' : 'Choices saved'}</small></span></li>
-        <li className={allResolved ? 'complete' : waitingToRun || createdTasks > 0 ? 'active' : 'pending'}><span className="progress-dot">{allResolved && createdTasks > 0 ? <Check size={12} /> : <ListTodo size={12} />}</span><span><strong>Local task</strong><small>{taskStage}</small></span></li>
-      </ol>
-      <div className="plan-card-header">
-        <div>
-          <div className="plan-kicker"><Sparkles size={14} /> {plan.generationMode === 'ai' ? 'AI-ASSISTED DRAFT' : 'BASIC LOCAL DRAFT'}</div>
-          <h2>Here’s a first pass</h2>
-          <p>Forge mapped the work into checkpoints. Review each step, then continue when its dependencies are ready.</p>
+    <details className="plan-card plan-details" open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
+      <summary className="plan-summary"><span className="plan-summary-icon"><ListTodo size={17} /></span><span className="plan-summary-copy"><strong>Plan details</strong><small>{plan.steps.length} {plan.steps.length === 1 ? 'task' : 'tasks'} · {detailStatus}</small></span><span className={`plan-status ${plan.status}`}>{plan.status.replaceAll('_', ' ')}</span><ChevronDown className="plan-summary-chevron" size={17} /></summary>
+      <div className="plan-details-content">
+        <ol className="progress-track" aria-label="Local task progress">
+          <li className="complete"><span className="progress-dot"><Check size={12} /></span><span><strong>Plan ready</strong><small>Local draft</small></span></li>
+          <li className={waitingForReview ? 'active' : 'complete'}><span className="progress-dot">{waitingForReview ? <ShieldCheck size={12} /> : <Check size={12} />}</span><span><strong>{waitingForReview ? 'Your review' : 'Review done'}</strong><small>{waitingForReview ? 'Waiting for you' : 'Choices saved'}</small></span></li>
+          <li className={allResolved ? 'complete' : waitingToRun || createdTasks > 0 ? 'active' : 'pending'}><span className="progress-dot">{allResolved && createdTasks > 0 ? <Check size={12} /> : <ListTodo size={12} />}</span><span><strong>Local task</strong><small>{taskStage}</small></span></li>
+        </ol>
+        <div className="steps-heading"><strong>Review each action</strong><span>Approval applies to the task beside it.</span></div>
+        <div className="steps-list">
+          {plan.steps.map((step, index) => (
+            <article className={`plan-step ${step.status}`} key={step.id}>
+              <div className="step-index">{step.status === 'done' ? <Check size={14} /> : step.status === 'active' ? <LoaderCircle className="spin" size={14} /> : step.status === 'failed' ? <X size={14} /> : index + 1}</div>
+              <div className="step-content">
+                <label className="sr-only" htmlFor={`step-${step.id}`}>Task title for step {index + 1}</label>
+                <input id={`step-${step.id}`} value={step.taskTitle} maxLength={120} onChange={(event) => onTitleChange(plan.id, step.id, event.target.value)} disabled={step.status === 'done' || step.status === 'active'} />
+                <details className="step-details"><summary>What this step does</summary><p>{step.detail}</p><p>Running this step only adds a task to Forge on this device. It won’t contact an external service.</p></details>
+                {step.checkpoint && <span className="step-checkpoint"><ShieldCheck size={12} /> {step.checkpoint}</span>}
+                {step.status === 'approved' && step.expiresAt && <span className="approval-expiry"><Clock3 size={13} /> Approved until {formatDate(step.expiresAt)}</span>}
+                {step.status === 'active' && <span className="step-running"><LoaderCircle className="spin" size={12} /> Working this step…</span>}
+                {step.status === 'done' && step.output && <span className="step-output"><Check size={12} /> {step.output}</span>}
+                {step.status === 'failed' && <span className="step-error"><X size={12} /> {step.error ?? 'This step needs attention.'}</span>}
+                {step.status === 'denied' && <span className="denied-note">Declined. No task was created.</span>}
+              </div>
+              <div className="step-controls">
+                {step.status === 'pending' && <>
+                  <button className="approve-button" aria-label={`Approve task: ${step.taskTitle}`} disabled={loading || hasUnsavedEdits || step.taskTitle.trim().length < 2 || Boolean(step.dependsOn?.some((dependencyId) => !plan.steps.some((candidate) => candidate.id === dependencyId && (candidate.status === 'done' || candidate.status === 'denied'))))} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Approve task</button>
+                  <button className="quiet-button" aria-label={`Decline task: ${step.taskTitle}`} disabled={loading || hasUnsavedEdits} onClick={() => onDeny(step.id)}>Decline</button>
+                </>}
+                {step.status === 'approved' && <button className="run-button" aria-label={`Run task: ${step.taskTitle}`} disabled={loading || hasUnsavedEdits} onClick={() => onExecute(step.id)}>{loading ? <LoaderCircle className="spin" size={14} /> : <ArrowDown size={14} />} Run task</button>}
+                {step.status === 'done' && <span className="complete-label"><Check size={13} /> Done</span>}
+                {step.status === 'active' && <span className="step-state-label">Executing</span>}
+                {step.status === 'failed' && <button className="approve-button" aria-label={`Review task again: ${step.taskTitle}`} disabled={loading} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Review again</button>}
+              </div>
+            </article>
+          ))}
         </div>
-        <span className={`plan-status ${plan.status}`}>{plan.status.replace('_', ' ')}</span>
+        <div className="plan-card-footer">
+          <span><LockKeyhole size={13} /> Local tasks only. No external service is contacted.</span>
+          <div>{hasUnsavedEdits && <span className="unsaved-label">Unsaved edits · save before approval</span>}<button className="save-plan-button" disabled={loading || !hasUnsavedEdits} onClick={onSave}>{loading ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />} Save plan</button></div>
+        </div>
       </div>
-      <div className="steps-list">
-        {plan.steps.map((step, index) => (
-          <article className={`plan-step ${step.status}`} key={step.id}>
-            <div className="step-index">{step.status === 'done' ? <Check size={14} /> : step.status === 'active' ? <LoaderCircle className="spin" size={14} /> : step.status === 'failed' ? <X size={14} /> : index + 1}</div>
-            <div className="step-content">
-              <label className="sr-only" htmlFor={`step-${step.id}`}>Task title for step {index + 1}</label>
-              <input id={`step-${step.id}`} value={step.taskTitle} maxLength={120} onChange={(event) => onTitleChange(plan.id, step.id, event.target.value)} disabled={step.status === 'done' || step.status === 'active'} />
-              <details className="step-details"><summary>What this step does</summary><p>{step.detail}</p><p>Running this step only adds a task to Forge on this device. It won’t contact an external service.</p></details>
-              {step.checkpoint && <span className="step-checkpoint"><ShieldCheck size={12} /> {step.checkpoint}</span>}
-              {step.status === 'approved' && step.expiresAt && <span className="approval-expiry"><Clock3 size={13} /> Approved until {formatDate(step.expiresAt)}</span>}
-              {step.status === 'active' && <span className="step-running"><LoaderCircle className="spin" size={12} /> Working this step…</span>}
-              {step.status === 'done' && step.output && <span className="step-output"><Check size={12} /> {step.output}</span>}
-              {step.status === 'failed' && <span className="step-error"><X size={12} /> {step.error ?? 'This step needs attention.'}</span>}
-              {step.status === 'denied' && <span className="denied-note">Declined. No task was created.</span>}
-            </div>
-            <div className="step-controls">
-              {step.status === 'pending' && <>
-                <button className="approve-button" disabled={loading || hasUnsavedEdits || step.taskTitle.trim().length < 2 || Boolean(step.dependsOn?.some((dependencyId) => !plan.steps.some((candidate) => candidate.id === dependencyId && (candidate.status === 'done' || candidate.status === 'denied'))))} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Approve</button>
-                <button className="quiet-button" disabled={loading || hasUnsavedEdits} onClick={() => onDeny(step.id)}>Decline</button>
-              </>}
-              {step.status === 'approved' && <button className="run-button" disabled={loading || hasUnsavedEdits} onClick={() => onExecute(step.id)}>{loading ? <LoaderCircle className="spin" size={14} /> : <ArrowDown size={14} />} Run task</button>}
-              {step.status === 'done' && <span className="complete-label"><Check size={13} /> Done</span>}
-              {step.status === 'active' && <span className="step-state-label">Executing</span>}
-              {step.status === 'failed' && <button className="approve-button" disabled={loading} onClick={() => onApprove(step.id)}><ShieldCheck size={14} /> Review again</button>}
-            </div>
-          </article>
-        ))}
-      </div>
-      <div className="plan-card-footer">
-        <span><LockKeyhole size={13} /> No messages or external services are touched.</span>
-        <div>{hasUnsavedEdits && <span className="unsaved-label">Unsaved edits · save before approval</span>}<button className="save-plan-button" disabled={loading || !hasUnsavedEdits} onClick={onSave}>{loading ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />} Save plan</button></div>
-      </div>
-    </div>
+    </details>
   )
 }
 
