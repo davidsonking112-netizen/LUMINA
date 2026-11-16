@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const requestText = `CSRF browser check ${Date.now()}`
+const requestText = `Create a local task to check the CSRF boundary ${Date.now()}`
 
 test('hostile-origin forms cannot approve or execute a task through the local API', async ({ page, request }) => {
   const create = await request.post('http://127.0.0.1:5173/api/plans', {

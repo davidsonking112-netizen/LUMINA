@@ -33,7 +33,7 @@ after(() => {
 })
 
 test('cross-origin form requests cannot approve or execute a task', async () => {
-  const created = await request(app).post('/api/plans').send({ request: 'Check the origin boundary.' }).expect(201)
+  const created = await request(app).post('/api/plans').send({ request: 'Create a local task to check the origin boundary.' }).expect(201)
   const plan = created.body as { id: string; steps: Array<{ id: string; status: string }> }
   const stepId = plan.steps[0].id
   const browserFormHeaders = {
@@ -56,7 +56,7 @@ test('cross-origin form requests cannot approve or execute a task', async () => 
 })
 
 test('unconnected action types cannot be approved or executed even if a saved plan is altered', async () => {
-  const created = await request(app).post('/api/plans').send({ request: 'Prepare a safe local task.' }).expect(201)
+  const created = await request(app).post('/api/plans').send({ request: 'Create a local task to prepare safely.' }).expect(201)
   const plan = created.body as { id: string; steps: Array<{ id: string; status: string }> }
   const row = db.prepare('SELECT steps_json FROM plans WHERE id = ?').get(plan.id) as { steps_json: string }
   const steps = JSON.parse(row.steps_json) as PlanStep[]
@@ -74,7 +74,26 @@ test('unconnected services stay inactive and unsupported workflows do not return
   const capabilities = await request(app).get('/api/capabilities').expect(200)
   assert.deepEqual(capabilities.body.inputModes, ['text'])
   assert.deepEqual(capabilities.body.actionKinds, ['create_task'])
+  assert.equal(typeof capabilities.body.modelConfigured, 'boolean')
   assert.equal(capabilities.body.streaming, false)
+
+  const previousModel = [process.env.FORGE_LLM_BASE_URL, process.env.FORGE_LLM_API_KEY, process.env.FORGE_LLM_MODEL]
+  delete process.env.FORGE_LLM_BASE_URL
+  delete process.env.FORGE_LLM_API_KEY
+  delete process.env.FORGE_LLM_MODEL
+  try {
+    const unavailable = await request(app).post('/api/plans').send({ request: 'What is the capital of Ghana?' }).expect(201)
+    assert.equal(unavailable.body.status, 'failed')
+    assert.equal(unavailable.body.assistantOutput.status, 'unavailable')
+    assert.match(unavailable.body.assistantOutput.answer, /No content or task was created/)
+    assert.equal(unavailable.body.steps.length, 0)
+  } finally {
+    for (const [index, key] of ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'].entries()) {
+      const value = previousModel[index]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
 
   const connectors = (await request(app).get('/api/connectors').expect(200)).body as Array<{ status: string; scopes: string[] }>
   assert.ok(connectors.length > 0)
@@ -88,8 +107,38 @@ test('unconnected services stay inactive and unsupported workflows do not return
   assert.equal((await request(app).get('/api/activity').expect(200)).body.length, activityBefore)
 })
 
+test('generated answer and draft persist separately from local task actions', async () => {
+  const keys = ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'] as const
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const previousFetch = globalThis.fetch
+  process.env.FORGE_LLM_BASE_URL = 'https://model.example/v1'
+  process.env.FORGE_LLM_API_KEY = 'test-only-secret'
+  process.env.FORGE_LLM_MODEL = 'test-model'
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+    answer: 'Here is the draft you asked for.',
+    deliverables: [{ title: 'Announcement', content: 'Your new portal is ready. Sign in to see all your account details in one place.' }],
+    localTasks: ['Review announcement before publishing'],
+  }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const created = await request(app).post('/api/plans').send({ request: 'Draft an announcement and create a separate local task to review it.' }).expect(201)
+    assert.equal(created.body.assistantOutput.status, 'generated')
+    assert.equal(created.body.assistantOutput.deliverables[0].title, 'Announcement')
+    assert.equal(created.body.steps.length, 1)
+    assert.equal(created.body.steps[0].taskTitle, 'Review announcement before publishing')
+    assert.equal((await request(app).get(`/api/plans/${created.body.id}`).expect(200)).body.assistantOutput.deliverables[0].content, 'Your new portal is ready. Sign in to see all your account details in one place.')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 0)
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const key of keys) {
+      const value = previous[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
 test('approval is required, edits invalidate it, and retries never create duplicate tasks', async () => {
-  const created = await request(app).post('/api/plans').send({ request: 'Prepare proposal; review final copy.' }).expect(201)
+  const created = await request(app).post('/api/plans').send({ request: 'Create local tasks to prepare proposal; review final copy.' }).expect(201)
   const plan = created.body as { id: string; request: string; generationMode: string; status: string; steps: Array<{ id: string; taskTitle: string; status: string; expiresAt?: string; approvalId?: string }> }
   assert.equal(plan.generationMode, 'local_parser')
   assert.equal(plan.steps.length, 2)
@@ -142,7 +191,7 @@ test('approval is required, edits invalidate it, and retries never create duplic
 })
 
 test('expired approvals return to pending and can be reviewed again without running the task', async () => {
-  const created = await request(app).post('/api/plans').send({ request: 'Review quarterly report.' }).expect(201)
+  const created = await request(app).post('/api/plans').send({ request: 'Create a local task to review the quarterly report.' }).expect(201)
   const plan = created.body as { id: string; steps: Array<{ id: string; status: string; approvalId?: string }> }
   const step = plan.steps[0]
   const approved = await request(app).post(`/api/plans/${plan.id}/steps/${step.id}/approve`).expect(200)
@@ -160,7 +209,7 @@ test('expired approvals return to pending and can be reviewed again without runn
 })
 
 test('multi-step plans enforce dependencies and report completed step output', async () => {
-  const created = await request(app).post('/api/plans').send({ request: 'Review the latest sales report; create a follow-up task.' }).expect(201)
+  const created = await request(app).post('/api/plans').send({ request: 'Create local tasks to review the latest sales report; add a follow-up task.' }).expect(201)
   const plan = created.body as { id: string; steps: Array<{ id: string; status: string }> }
   assert.equal(plan.steps.length, 2)
   await request(app).post(`/api/plans/${plan.id}/steps/${plan.steps[1].id}/approve`).expect(409)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowDown, ArrowRight, Blocks, BookOpen, CalendarClock, Check, CheckCheck, ChevronDown,
-  CircleHelp, Clock3, FileText, Files, FolderOpen, History, Home, Inbox, LoaderCircle,
+  CircleHelp, Clock3, Copy, FileText, Files, FolderOpen, History, Home, Inbox, LoaderCircle,
   ListTodo, LockKeyhole, Menu, MessageSquare, Mic, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
   PanelRight, Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen, Trash2, X,
 } from 'lucide-react'
@@ -57,6 +57,22 @@ function trapDrawerTab(event: globalThis.KeyboardEvent, drawer: HTMLElement | nu
   }
 }
 
+function AssistantText({ text, className }: { text: string; className: string }) {
+  const blocks = text.trim().split(/\n\s*\n/).filter(Boolean)
+  return <div className={className}>{blocks.map((block, blockIndex) => {
+    const lines = block.split('\n').filter((line) => line.trim())
+    const isNumbered = lines.every((line) => /^\s*\d+[.)]\s+/.test(line))
+    const isBulleted = lines.every((line) => /^\s*[-*•]\s+/.test(line))
+    const heading = lines.length === 1 ? lines[0].match(/^#{1,3}\s+(.+)$/) : null
+    if (heading) return <h3 key={blockIndex}>{heading[1]}</h3>
+    if (isNumbered || isBulleted) {
+      const List = isNumbered ? 'ol' : 'ul'
+      return <List key={blockIndex}>{lines.map((line, lineIndex) => <li key={lineIndex}>{line.replace(/^\s*(?:\d+[.)]|[-*•])\s+/, '')}</li>)}</List>
+    }
+    return <p key={blockIndex}>{lines.map((line, lineIndex) => <span key={lineIndex}>{line}{lineIndex < lines.length - 1 && <br />}</span>)}</p>
+  })}</div>
+}
+
 function App() {
   const [section, setSection] = useState<Section>('home')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -69,6 +85,7 @@ function App() {
   const [tasks, setTasks] = useState<ForgeTask[]>([])
   const [memories, setMemories] = useState<MemoryEntry[]>([])
   const [activity, setActivity] = useState<AuditEvent[]>([])
+  const [modelConfigured, setModelConfigured] = useState(false)
   const [draft, setDraft] = useState('')
   const [searchText, setSearchText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -98,11 +115,12 @@ function App() {
 
   async function refreshData() {
     try {
-      const [taskRows, memoryRows, activityRows, planRows] = await Promise.all([api.tasks(), api.memories(), api.activity(), api.plans()])
+      const [taskRows, memoryRows, activityRows, planRows, capabilities] = await Promise.all([api.tasks(), api.memories(), api.activity(), api.plans(), api.capabilities()])
       setTasks(taskRows)
       setMemories(memoryRows)
       setActivity(activityRows)
       setPlans(planRows)
+      setModelConfigured(capabilities.modelConfigured)
       setCurrentPlanId((current) => current || planRows[0]?.id || '')
       setReady(true)
       setError('')
@@ -171,7 +189,7 @@ function App() {
       setCurrentPlanId(plan.id)
       setDraft('')
       setSection('chat')
-      toast('Plan drafted. Nothing has run yet.')
+      toast(plan.assistantOutput?.status === 'generated' ? 'Your answer is ready.' : plan.steps.length ? 'No answer was generated. Local task titles are available separately.' : 'No answer was generated. Nothing was added.')
       void refreshActivity()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not draft that plan.')
@@ -182,6 +200,15 @@ function App() {
 
   async function refreshActivity() {
     try { setActivity(await api.activity()) } catch { /* keep the last visible audit list */ }
+  }
+
+  async function copyDeliverable(content: string) {
+    try {
+      await navigator.clipboard.writeText(content)
+      toast('Draft copied.')
+    } catch {
+      toast('Could not copy the draft. You can still select its text.', 'error')
+    }
   }
 
   function updateStepTitle(planId: string, stepId: string, value: string) {
@@ -351,7 +378,7 @@ function App() {
 
   const mobileViewport = window.matchMedia('(max-width: 680px)').matches
   const title = section === 'chat' ? currentPlan?.request ?? 'New task' : navigation.find((item) => item.id === section)?.label ?? 'Home'
-  const taskStatus = currentPlan?.status === 'draft' ? 'Draft' : currentPlan?.status === 'in_progress' ? 'In progress' : currentPlan?.status === 'completed' ? 'Completed' : ''
+  const taskStatus = currentPlan?.assistantOutput?.status === 'generated' ? 'Answer ready' : currentPlan?.assistantOutput?.status === 'unavailable' && !currentPlan.steps.length ? 'Unavailable' : currentPlan?.steps.length ? currentPlan.status === 'draft' ? 'Draft' : currentPlan.status === 'in_progress' ? 'In progress' : currentPlan.status === 'completed' ? 'Completed' : '' : ''
 
   return (
     <div className={`app-shell ${desktopNavCollapsed ? 'nav-collapsed' : ''}`}>
@@ -379,7 +406,7 @@ function App() {
       {mobileNavOpen && <button className="mobile-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMobileNavOpen(false)} />}
 
       <main className="main-shell" aria-hidden={mobileViewport && mobileNavOpen} inert={mobileViewport && mobileNavOpen}>
-        <header className="topbar" aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen}>
+        <header className={`topbar ${section === 'chat' ? 'chat-topbar' : ''}`} aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen}>
           <div className="topbar-left"><button ref={menuToggleRef} className="icon-button menu-button" aria-label={mobileViewport ? mobileNavOpen ? 'Close navigation' : 'Open navigation' : desktopNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={mobileViewport ? mobileNavOpen : !desktopNavCollapsed} onClick={() => { if (mobileViewport) setMobileNavOpen((open) => !open); else setDesktopNavCollapsed((collapsed) => !collapsed) }}><span className="mobile-menu-icon"><Menu size={19} /></span><span className="desktop-menu-icon">{desktopNavCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</span></button><span className="breadcrumb">Workspace</span><ArrowRight size={14} className="breadcrumb-arrow" /><span className="breadcrumb-current" title={title}>{title}</span></div>
           <div className="topbar-right">{section === 'chat' && currentPlan && <><span className={`active-task-status ${currentPlan.status}`} aria-label={`Task status: ${taskStatus}`}>{taskStatus}</span><button className="task-header-action" aria-label="Open task history" title="Open task history" onClick={() => { setHistoryTab('plans'); setSection('history') }}><History size={15} /><span>History</span></button><button className="task-header-action" aria-label="Start a new task" title="Start a new task" onClick={() => { setCurrentPlanId(''); setDraft(''); setSection('chat'); window.requestAnimationFrame(() => requestInputRef.current?.focus()) }}><SquarePen size={15} /><span>New task</span></button></>}<span className={`connection-pill ${ready ? 'online' : 'offline'}`}><i />{ready ? 'Local service connected' : 'Connecting'}</span><button className="help-button" aria-label="About this prototype" onClick={() => setSection('settings')}><CircleHelp size={18} /></button></div>
         </header>
@@ -387,9 +414,9 @@ function App() {
         <div className="main-scroll">
           {error && <div className="error-banner" role="alert"><CircleHelp size={17} /><span>{error}</span><button onClick={() => void refreshData()}>Retry</button></div>}
           {section === 'home' && <section className="dashboard-view">
-            <PageHeader icon={<Home size={19} />} eyebrow="YOUR WORKSPACE" title="Welcome back, Davids" description="A calm place to plan what matters and keep the next step clear." action={<button className="primary-button" onClick={() => { setSection('chat'); setCurrentPlanId('') }}><SquarePen size={15} /> New task</button>} />
+            <PageHeader icon={<Home size={19} />} eyebrow="YOUR WORKSPACE" title="Welcome back, Davids" description="Ask for an answer or a draft. Keep any follow-up tasks separate." action={<button className="primary-button" onClick={() => { setSection('chat'); setCurrentPlanId('') }}><SquarePen size={15} /> New task</button>} />
             <div className="dashboard-top-grid">
-              <article className="dashboard-hero"><div className="dashboard-hero-orb"><Sparkles size={20} /></div><span className="eyebrow">A LITTLE MOMENTUM</span><h2>What would you like to move forward?</h2><p>Start with a task. Forge will make a local plan for you to review before anything happens.</p><button className="secondary-button" onClick={() => setSection('chat')}>Open new task <ArrowRight size={14} /></button></article>
+              <article className="dashboard-hero"><div className="dashboard-hero-orb"><Sparkles size={20} /></div><span className="eyebrow">A LITTLE MOMENTUM</span><h2>What would you like to move forward?</h2><p>{modelConfigured ? 'Ask a question or request a draft. Forge puts the result in your conversation.' : 'A language model isn’t connected yet, so Forge can’t generate answers or drafts. Local task titles stay separate.'}</p><button className="secondary-button" onClick={() => setSection('chat')}>Open new task <ArrowRight size={14} /></button></article>
               <article className="dashboard-quick-starts"><div className="section-heading"><div><span className="eyebrow">QUICK STARTS</span><h2>Pick a place to begin</h2></div><Sparkles size={17} /></div><div className="quick-start-list">{quickStarts.map((prompt) => <button key={prompt} className="quick-start-button" onClick={() => { setDraft(prompt); setCurrentPlanId(''); setSection('chat') }}><span>{prompt}</span><ArrowRight size={15} /></button>)}</div></article>
             </div>
             <div className="dashboard-lower-grid">
@@ -400,15 +427,15 @@ function App() {
           </section>}
           {section === 'chat' && <section className={`chat-layout ${currentPlan ? 'has-conversation' : 'new-conversation'}`}>
             <div className="chat-column" aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen}>
-              {!currentPlan && <div className="chat-heading"><div className="forge-orb"><Sparkles size={20} /></div><div><p className="eyebrow">FORGE</p><h1>What’s on your mind?</h1><p className="heading-subtitle">Describe a goal and Forge will turn it into a plan you can review.</p></div></div>}
+              {!currentPlan && <div className="chat-heading"><div className="forge-orb"><Sparkles size={20} /></div><div><p className="eyebrow">FORGE</p><h1>What’s on your mind?</h1><p className="heading-subtitle">{modelConfigured ? 'Ask a question or request a draft. Forge will put the result here.' : 'A language model isn’t connected, so Forge can’t answer or draft yet. Local task titles are still available.'}</p></div></div>}
               {currentPlan ? <div className="conversation-block">
                 <div className="message-bubble user-bubble"><span className="message-label">You</span><p>{currentPlan.request}</p></div>
-                <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><strong>Forge</strong><span>Local plan · review before running</span></div><p className="assistant-answer">This is a plan of local to-dos, not the work product itself. Running an approved step adds only its title to Forge’s task list on this device; it does not create a document or contact an external service.</p><PlanCard plan={currentPlan} loading={loading} hasUnsavedEdits={dirtyPlanIds.has(currentPlan.id)} onTitleChange={updateStepTitle} onSave={() => void savePlan(currentPlan)} onApprove={(stepId) => void approveStep(currentPlan, stepId)} onDeny={(stepId) => void denyStep(currentPlan, stepId)} onExecute={(stepId) => void executeStep(currentPlan, stepId)} /></div></div>
-              </div> : loading ? <div className="empty-prompt planning-state" role="status"><div className="empty-prompt-icon"><LoaderCircle className="spin" size={19} /></div><p>Thinking through the steps…</p><span>Nothing is running. You’ll review the draft first.</span></div> : <div className="empty-prompt"><div className="empty-prompt-icon"><MessageSquare size={19} /></div><p>Start with a goal or question.</p><span>Forge will turn it into a clear, editable plan before anything important happens.</span></div>}
+                <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><strong>Forge</strong><span>{currentPlan.assistantOutput?.status === 'generated' ? 'Answer' : 'Capability notice'}</span></div><AssistantText text={currentPlan.assistantOutput?.answer ?? 'This saved request contains local task titles only. No generated answer or deliverable was saved with it.'} className="assistant-answer" />{currentPlan.assistantOutput?.deliverables?.map((deliverable, index) => <article className="deliverable-card" key={`${deliverable.title}-${index}`}><div className="deliverable-card-header"><div><span className="eyebrow">DRAFT</span><h2>{deliverable.title}</h2></div><button className="secondary-button" onClick={() => void copyDeliverable(deliverable.content)}><Copy size={14} /> Copy draft</button></div><div className="deliverable-content"><AssistantText text={deliverable.content} className="deliverable-richtext" /></div></article>)}{currentPlan.steps.length > 0 && <PlanCard plan={currentPlan} loading={loading} hasUnsavedEdits={dirtyPlanIds.has(currentPlan.id)} onTitleChange={updateStepTitle} onSave={() => void savePlan(currentPlan)} onApprove={(stepId) => void approveStep(currentPlan, stepId)} onDeny={(stepId) => void denyStep(currentPlan, stepId)} onExecute={(stepId) => void executeStep(currentPlan, stepId)} />}</div></div>
+              </div> : loading ? <div className="empty-prompt planning-state" role="status"><div className="empty-prompt-icon"><LoaderCircle className="spin" size={19} /></div><p>{modelConfigured ? 'Writing your answer…' : 'Checking your request…'}</p><span>{modelConfigured ? 'Your finished response will appear here.' : 'No generated content is available without a model.'}</span></div> : <div className="empty-prompt"><div className="empty-prompt-icon"><MessageSquare size={19} /></div><p>{modelConfigured ? 'Ask a question or request a draft.' : 'Forge can’t answer or draft yet.'}</p><span>{modelConfigured ? 'Your answer will appear here. Any local task actions stay separate.' : 'You can add local task titles, or connect a language model to generate actual answers and drafts.'}</span></div>}
               <form className="composer" onSubmit={createPlan}>
                 <label className="sr-only" htmlFor="request">Message Forge</label>
-                <textarea ref={requestInputRef} id="request" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder="Describe a task to plan…" rows={2} />
-                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>Plans are editable. Approval and running are separate steps.</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><button ref={contextToggleRef} className="context-toggle composer-tool" type="button" aria-label="Open task details" title="Task details" aria-expanded={mobileContextOpen} aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /></button><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>Create plan</span></button></div></div>
+                <textarea ref={requestInputRef} id="request" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder={modelConfigured ? 'Ask a question or request a draft…' : 'Add local task titles, or request a draft…'} rows={2} />
+                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle"><Sparkles size={14} /></span><span>{modelConfigured ? 'Forge answers directly. Local tasks are separate.' : 'No model connected. No answer or draft will be generated.'}</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><button ref={contextToggleRef} className="context-toggle composer-tool" type="button" aria-label="Open task details" title="Task details" aria-expanded={mobileContextOpen} aria-hidden={mobileViewport && mobileContextOpen} inert={mobileViewport && mobileContextOpen} onClick={() => setMobileContextOpen(true)}><PanelRight size={16} /></button><span>{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>{modelConfigured ? 'Ask Forge' : 'Submit request'}</span></button></div></div>
               </form>
             </div>
             {mobileContextOpen && <button className="context-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMobileContextOpen(false)} />}
@@ -453,6 +480,7 @@ function App() {
               <article className="settings-card"><div className="settings-icon"><ShieldCheck size={18} /></div><div><h2>Approval mode</h2><p>Every local task waits for your explicit approval. Automatic workflows and external services are not connected.</p><span className="settings-status"><span className="source-dot" /> Review before every action</span></div></article>
               <article className="settings-card"><div className="settings-icon"><LockKeyhole size={18} /></div><div><h2>Storage and privacy</h2><p>Plans, tasks, memories and activity live in a local SQLite database on this device. There is no account or cloud sync in this prototype.</p><span className="settings-status">Do not store passwords or payment details</span></div></article>
               <article className="settings-card"><div className="settings-icon"><Sparkles size={18} /></div><div><h2>Connected services</h2><p>No email, calendar or messaging service is connected. Nothing can be sent or changed outside this local workspace.</p><span className="settings-status">0 services connected</span></div></article>
+              <article className="settings-card"><div className="settings-icon"><MessageSquare size={18} /></div><div><h2>Answer generation</h2><p>{modelConfigured ? 'A language model is configured for answers and text drafts. Your request text is sent to that provider over HTTPS.' : 'No language model is configured, so Forge cannot generate answers or drafts yet.'}</p><span className="settings-status">{modelConfigured ? 'Available' : 'Not configured'}</span></div></article>
               <article className="settings-card"><div className="settings-icon"><FileText size={18} /></div><div><h2>Data lifecycle</h2><p>Export a JSON copy, or clear local workspace records. SQLite row deletion is not guaranteed secure erasure.</p><span className="settings-status">Local prototype · single device · no cloud backup</span></div></article>
             </div>
             <div className="data-actions"><div><h2>Manage local data</h2><p>Export includes saved plan requests, tasks, memories, approvals, and activity. Clear removes those database rows and all retained activity.</p></div><div className="data-action-buttons"><button className="secondary-button" onClick={() => void exportLocalData()}><FileText size={14} /> Export JSON</button><button className="clear-data-button" onClick={() => void clearLocalData()}><Trash2 size={14} /> Clear all local data</button></div></div>
@@ -468,7 +496,7 @@ function App() {
 }
 
 function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApprove, onDeny, onExecute }: { plan: Plan; loading: boolean; hasUnsavedEdits: boolean; onTitleChange: (planId: string, stepId: string, value: string) => void; onSave: () => void; onApprove: (stepId: string) => void; onDeny: (stepId: string) => void; onExecute: (stepId: string) => void }) {
-  const [detailsOpen, setDetailsOpen] = useState(true)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const createdTasks = plan.steps.filter((step) => step.status === 'done').length
   const waitingForReview = plan.steps.some((step) => step.status === 'pending')
   const waitingToRun = plan.steps.some((step) => step.status === 'approved')
@@ -480,7 +508,7 @@ function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApp
   const detailStatus = reviewCount ? `${readyForReview} ready for review${waitingOnEarlierSteps ? ` · ${waitingOnEarlierSteps} waiting on earlier steps` : ''}` : taskStage
   return (
     <details className="plan-card plan-details" open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
-      <summary className="plan-summary"><span className="plan-summary-icon"><ListTodo size={17} /></span><span className="plan-summary-copy"><strong>Plan details</strong><small>{plan.steps.length} {plan.steps.length === 1 ? 'task' : 'tasks'} · {detailStatus}</small></span><span className={`plan-status ${plan.status}`}>{plan.status.replaceAll('_', ' ')}</span><ChevronDown className="plan-summary-chevron" size={17} /></summary>
+      <summary className="plan-summary"><span className="plan-summary-icon"><ListTodo size={17} /></span><span className="plan-summary-copy"><strong>Local task actions</strong><small>{plan.steps.length} {plan.steps.length === 1 ? 'task' : 'tasks'} · {detailStatus}</small></span><span className={`plan-status ${plan.status}`}>{plan.status.replaceAll('_', ' ')}</span><ChevronDown className="plan-summary-chevron" size={17} /></summary>
       <div className="plan-details-content">
         <ol className="progress-track" aria-label="Local task progress">
           <li className="complete"><span className="progress-dot"><Check size={12} /></span><span><strong>Plan ready</strong><small>Local draft</small></span></li>

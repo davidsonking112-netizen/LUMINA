@@ -3,6 +3,13 @@ export type PermissionMode = 'suggest' | 'approve' | 'automatic'
 export type ActionKind = 'create_task' | 'send_email' | 'calendar_change' | 'file_operation' | 'publish_content' | 'record_update' | 'web_research' | 'document_transform'
 export type RiskLevel = 'low' | 'medium' | 'high'
 
+export interface AssistantOutput {
+  status: 'generated' | 'unavailable'
+  answer: string
+  deliverables?: Array<{ title: string; content: string }>
+  generatedAt?: string
+}
+
 export interface PlanStep {
   id: string
   title: string
@@ -34,6 +41,7 @@ export interface Plan {
   createdAt: string
   updatedAt: string
   steps: PlanStep[]
+  assistantOutput?: AssistantOutput
   assumptions?: string[]
 }
 

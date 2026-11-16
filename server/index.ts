@@ -2,7 +2,7 @@ import express from 'express'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { db, recordAudit } from './db.js'
-import { actionHash, draftPlan } from './plan.js'
+import { actionHash, draftPlan, isModelConfigured } from './plan.js'
 import type { AuditEvent, Connector, ForgeTask, MemoryEntry, Plan, PlanStep } from '../src/types.js'
 
 const app = express()
@@ -43,16 +43,17 @@ const editSchema = z.object({ steps: z.array(z.object({ id: z.string().uuid(), t
 const memorySchema = z.object({ title: z.string().trim().min(2).max(80), content: z.string().trim().min(2).max(1200) })
 
 function loadPlan(id: string): Plan | undefined {
-  const row = db.prepare('SELECT * FROM plans WHERE id = ?').get(id) as { id: string; request: string; generation_mode: Plan['generationMode']; status: Plan['status']; created_at: string; updated_at: string; steps_json: string } | undefined
+  const row = db.prepare('SELECT * FROM plans WHERE id = ?').get(id) as { id: string; request: string; generation_mode: Plan['generationMode']; status: Plan['status']; created_at: string; updated_at: string; steps_json: string; assistant_output_json?: string } | undefined
   if (!row) return undefined
-  return { id: row.id, request: row.request, generationMode: row.generation_mode, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, steps: JSON.parse(row.steps_json) as PlanStep[] }
+  const assistantOutput = row.assistant_output_json ? JSON.parse(row.assistant_output_json) as Plan['assistantOutput'] : undefined
+  return { id: row.id, request: row.request, generationMode: row.generation_mode, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, steps: JSON.parse(row.steps_json) as PlanStep[], ...(assistantOutput && Object.keys(assistantOutput).length ? { assistantOutput } : {}) }
 }
 
 function savePlan(plan: Plan) {
-  db.prepare(`INSERT INTO plans (id, request, generation_mode, status, created_at, updated_at, steps_json)
-    VALUES (@id, @request, @generationMode, @status, @createdAt, @updatedAt, @steps)
-    ON CONFLICT(id) DO UPDATE SET generation_mode = excluded.generation_mode, status = excluded.status, updated_at = excluded.updated_at, steps_json = excluded.steps_json`)
-    .run({ id: plan.id, request: plan.request, generationMode: plan.generationMode, status: plan.status, createdAt: plan.createdAt, updatedAt: plan.updatedAt, steps: JSON.stringify(plan.steps) })
+  db.prepare(`INSERT INTO plans (id, request, generation_mode, status, created_at, updated_at, steps_json, assistant_output_json)
+    VALUES (@id, @request, @generationMode, @status, @createdAt, @updatedAt, @steps, @assistantOutput)
+    ON CONFLICT(id) DO UPDATE SET generation_mode = excluded.generation_mode, status = excluded.status, updated_at = excluded.updated_at, steps_json = excluded.steps_json, assistant_output_json = excluded.assistant_output_json`)
+    .run({ id: plan.id, request: plan.request, generationMode: plan.generationMode, status: plan.status, createdAt: plan.createdAt, updatedAt: plan.updatedAt, steps: JSON.stringify(plan.steps), assistantOutput: JSON.stringify(plan.assistantOutput ?? {}) })
 }
 
 function jsonError(res: express.Response, status: number, message: string) {
@@ -89,6 +90,7 @@ app.get('/api/capabilities', (_req, res) => res.json({
   permissionModes: [{ id: 'approve', label: 'Review every action', description: 'Each local task waits for explicit approval before it is added.' }],
   inputModes: ['text'],
   actionKinds: ['create_task'],
+  modelConfigured: isModelConfigured(),
   streaming: false,
 }))
 
@@ -147,10 +149,15 @@ app.post('/api/plans', async (req, res) => {
   try {
     plan = await draftPlan(parsed.data.request)
   } catch {
-    return jsonError(res, 502, 'Forge could not draft a plan with the configured model. Nothing was saved or executed.')
+    return jsonError(res, 502, 'Forge could not generate an answer with the configured model. No answer or task list was saved.')
   }
   savePlan(plan)
-  recordAudit('plan.created', 'plan', plan.id, 'Draft plan created; no action has run.')
+  const summary = plan.assistantOutput?.status === 'generated'
+    ? 'Generated answer saved locally; no external action was taken.'
+    : plan.steps.length
+      ? 'Answer unavailable; local task titles saved separately for review. No task was run.'
+      : 'Answer unavailable; no content or tasks were created.'
+  recordAudit('plan.created', 'plan', plan.id, summary)
   res.status(201).json(plan)
 })
 

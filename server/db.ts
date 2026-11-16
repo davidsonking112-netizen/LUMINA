@@ -17,7 +17,8 @@ db.exec(`
     status TEXT NOT NULL CHECK (status IN ('draft', 'in_progress', 'running', 'completed', 'failed')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    steps_json TEXT NOT NULL
+    steps_json TEXT NOT NULL,
+    assistant_output_json TEXT NOT NULL DEFAULT '{}'
   );
   CREATE TABLE IF NOT EXISTS approvals (
     id TEXT PRIMARY KEY,
@@ -57,6 +58,9 @@ db.exec(`
 const planColumns = db.pragma('table_info(plans)') as Array<{ name: string }>
 if (!planColumns.some((column) => column.name === 'generation_mode')) {
   db.exec("ALTER TABLE plans ADD COLUMN generation_mode TEXT NOT NULL DEFAULT 'local_parser'")
+}
+if (!planColumns.some((column) => column.name === 'assistant_output_json')) {
+  db.exec("ALTER TABLE plans ADD COLUMN assistant_output_json TEXT NOT NULL DEFAULT '{}'")
 }
 
 export function recordAudit(eventType: string, entityType: string, entityId: string, summary: string) {

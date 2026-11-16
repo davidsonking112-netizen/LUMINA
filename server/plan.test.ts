@@ -2,19 +2,53 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { actionHash, draftPlan } from './plan.js'
 
-test('local plan drafting is bounded, local-only and labels its generation source', async () => {
-  const plan = await draftPlan('Prepare proposal; review final copy.')
+test('without a model, Forge does not fabricate an answer and only creates task suggestions when asked', async () => {
+  const plan = await draftPlan('What is the capital of Ghana?')
   assert.equal(plan.generationMode, 'local_parser')
-  assert.equal(plan.steps.length, 2)
-  assert.equal(plan.steps[0].taskTitle, 'Prepare proposal')
-  assert.equal(plan.steps[1].taskTitle, 'review final copy')
-  assert.equal(plan.steps[0].status, 'pending')
-  assert.ok(plan.steps.every((step) => step.kind === 'create_task'))
-  assert.equal(plan.steps[0].actionHash, actionHash(plan.id, plan.steps[0]))
+  assert.equal(plan.assistantOutput?.status, 'unavailable')
+  assert.match(plan.assistantOutput?.answer ?? '', /language model hasn’t been configured/)
+  assert.equal(plan.steps.length, 0)
+})
+
+test('configured model returns a useful answer and deliverable independently from local tasks', async () => {
+  const keys = ['FORGE_LLM_BASE_URL', 'FORGE_LLM_API_KEY', 'FORGE_LLM_MODEL'] as const
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  const previousFetch = globalThis.fetch
+  process.env.FORGE_LLM_BASE_URL = 'https://model.example/v1'
+  process.env.FORGE_LLM_API_KEY = 'test-only-secret'
+  process.env.FORGE_LLM_MODEL = 'test-model'
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+    answer: 'Here’s a concise launch announcement draft you can adapt.',
+    deliverables: [{ title: 'Launch announcement', content: 'We’re excited to introduce the new customer portal. It brings your account, orders, and support into one simple place.' }],
+    localTasks: ['Review the announcement with the launch team'],
+    assumptions: ['The portal is ready to launch.'],
+  }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const plan = await draftPlan('Draft a launch announcement and create a local task to review it.')
+    assert.equal(plan.generationMode, 'ai')
+    assert.equal(plan.assistantOutput?.status, 'generated')
+    assert.match(plan.assistantOutput?.answer ?? '', /announcement draft/)
+    assert.equal(plan.assistantOutput?.deliverables?.[0].title, 'Launch announcement')
+    assert.match(plan.assistantOutput?.deliverables?.[0].content ?? '', /customer portal/)
+    assert.equal(plan.steps.length, 1)
+    assert.equal(plan.steps[0].taskTitle, 'Review the announcement with the launch team')
+    assert.equal(plan.steps[0].status, 'pending')
+    assert.equal(plan.steps[0].actionHash, actionHash(plan.id, plan.steps[0]))
+    const contentOnly = await draftPlan('Draft a launch announcement.')
+    assert.equal(contentOnly.assistantOutput?.status, 'generated')
+    assert.equal(contentOnly.steps.length, 0)
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const key of keys) {
+      const value = previous[key]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
 })
 
 test('action hash changes when the approved task changes', async () => {
-  const plan = await draftPlan('Draft a short report.')
+  const plan = await draftPlan('Create a local task to track the short report.')
   const step = plan.steps[0]
   const original = actionHash(plan.id, step)
   assert.notEqual(original, actionHash(plan.id, { ...step, taskTitle: 'Send a report to a client' }))
