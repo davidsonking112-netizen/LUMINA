@@ -392,6 +392,7 @@
   .chat-workbench .plan-details-content .plan-card-footer { align-items: flex-start; flex-direction: column; margin-inline: -11px; padding: 9px 11px; }
   .chat-workbench .plan-details-content .plan-card-footer > div { align-self: flex-end; }
   .chat-workbench .composer { bottom: 8px; padding: 10px 10px 9px; border-radius: 12px; }
+  .chat-workbench:has(.plan-details[open]) .composer { position: static; bottom: auto; }
   .composer-label-row { margin-bottom: 5px; font-size: 7px; }
   .composer-label-row span:last-child { display: none; }
   .chat-workbench .composer textarea { min-height: 48px; font-size: 13px; }

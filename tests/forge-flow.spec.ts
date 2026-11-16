@@ -79,6 +79,41 @@ test('plan review, exact approval, task execution, export and deletion history w
   expect(pageErrors).toEqual([])
 })
 
+test('expanded local task review stays clear of the composer on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New task' }).first().click()
+  await page.getByLabel('Message Forge').fill(requestText)
+  await page.getByRole('button', { name: 'Submit request' }).click()
+
+  await expect(page.locator('.assistant-answer')).toContainText('language model hasn’t been configured')
+  await expect(page.locator('#composer-disclosure')).toContainText('Submitted requests are saved locally')
+  await expect(page.getByRole('button', { name: 'Dismiss notification' })).toBeVisible()
+  await page.getByRole('button', { name: 'Dismiss notification' }).click()
+  await page.locator('.plan-summary').click()
+
+  const planDetails = page.locator('.plan-details')
+  await expect(planDetails).toHaveAttribute('open', '')
+  await expect(page.getByRole('button', { name: /Approve task:/ })).toHaveCount(2)
+  const overlap = await page.evaluate(() => {
+    const composer = document.querySelector('.composer')!.getBoundingClientRect()
+    const approval = document.querySelector('.approve-button')!.getBoundingClientRect()
+    return Math.max(composer.left, approval.left) < Math.min(composer.right, approval.right)
+      && Math.max(composer.top, approval.top) < Math.min(composer.bottom, approval.bottom)
+  })
+  expect(overlap).toBe(false)
+  await expect(page.locator('.composer')).toHaveCSS('position', 'static')
+  await page.screenshot({ path: 'screenshots/chat-redesign/after-local-review-expanded-mobile-fixed.png', fullPage: true })
+
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await expect(page.locator('.composer')).toHaveCSS('position', 'sticky')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: /Approve task:/ }).first().click()
+  await expect(page.getByText('Approved for 10 minutes. The action has not run yet.')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Run task:/ })).toBeVisible()
+  await expect(page.getByText('Task created in Forge.')).toHaveCount(0)
+})
+
 test('generated answer and draft are the result, with separate local tasks collapsed', async ({ page }) => {
   const requestText = 'Draft a short customer portal announcement and add a separate local task to review it.'
   const generatedPlan = {
