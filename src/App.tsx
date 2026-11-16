@@ -473,9 +473,11 @@ function PlanCard({ plan, loading, hasUnsavedEdits, onTitleChange, onSave, onApp
   const waitingForReview = plan.steps.some((step) => step.status === 'pending')
   const waitingToRun = plan.steps.some((step) => step.status === 'approved')
   const reviewCount = plan.steps.filter((step) => step.status === 'pending').length
+  const readyForReview = plan.steps.filter((step) => step.status === 'pending' && !step.dependsOn?.some((dependencyId) => !plan.steps.some((candidate) => candidate.id === dependencyId && (candidate.status === 'done' || candidate.status === 'denied')))).length
+  const waitingOnEarlierSteps = reviewCount - readyForReview
   const allResolved = plan.steps.every((step) => step.status === 'done' || step.status === 'denied')
   const taskStage = allResolved ? createdTasks ? `${createdTasks} local ${createdTasks === 1 ? 'task' : 'tasks'} created` : 'Declined · no tasks created' : waitingToRun || createdTasks > 0 ? `${createdTasks} of ${plan.steps.length} tasks created` : 'No task has run'
-  const detailStatus = reviewCount ? `${reviewCount} ${reviewCount === 1 ? 'action' : 'actions'} awaiting review` : taskStage
+  const detailStatus = reviewCount ? `${readyForReview} ready for review${waitingOnEarlierSteps ? ` · ${waitingOnEarlierSteps} waiting on earlier steps` : ''}` : taskStage
   return (
     <details className="plan-card plan-details" open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
       <summary className="plan-summary"><span className="plan-summary-icon"><ListTodo size={17} /></span><span className="plan-summary-copy"><strong>Plan details</strong><small>{plan.steps.length} {plan.steps.length === 1 ? 'task' : 'tasks'} · {detailStatus}</small></span><span className={`plan-status ${plan.status}`}>{plan.status.replaceAll('_', ' ')}</span><ChevronDown className="plan-summary-chevron" size={17} /></summary>

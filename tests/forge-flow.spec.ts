@@ -22,6 +22,7 @@ test('plan review, exact approval, task execution, export and deletion history w
   await expect(page.locator('.assistant-answer')).toContainText('does not create a document or contact an external service')
   await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toHaveCount(0)
   await expect(page.getByText('Plan details')).toBeVisible()
+  await expect(page.locator('.plan-summary')).toContainText('1 ready for review · 1 waiting on earlier steps')
   const planDetails = page.locator('.plan-details')
   await page.locator('.plan-summary').click()
   await expect(planDetails).not.toHaveAttribute('open')
