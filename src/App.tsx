@@ -8,6 +8,7 @@ import {
 import { api } from './api'
 import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
 import './App.css'
+import './feature.css'
 
 type Section = 'home' | 'chat' | 'inbox' | 'projects' | 'automations' | 'memory' | 'connected' | 'files' | 'history' | 'settings'
 type HistoryTab = 'plans' | 'tasks' | 'activity'
