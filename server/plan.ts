@@ -32,14 +32,22 @@ export function isModelConfigured() {
 
 export function explicitlyRequestsNoSave(request: string) {
   const normalized = request.replace(/[‘’]/g, "'").replace(/\s+/g, ' ').toLowerCase()
-  const negative = /(?:do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt)/
-  const storageVerb = '(?:save|store|keep|retain|record|log)'
-  const object = '(?:(?:the|this|my|our|your|a|an|any)\\s+)?(?:(?:task|plan)\\s+)?(?:request|prompt|text|content|data)'
-  const direct = new RegExp(`\\b${negative.source}\\s+${storageVerb}\\s+${object}\\b`, 'i').test(normalized)
-  const pronoun = new RegExp(`\\b${negative.source}\\s+${storageVerb}\\s+(?:it|this|that)\\b`, 'i').test(normalized)
-  const unwanted = new RegExp(`\\b(?:i|we)\\s+${negative.source}\\s+want\\s+(?:you\\s+to\\s+)?${storageVerb}\\s+(?:${object}|it|this|that)\\b`, 'i').test(normalized)
-  const passive = /\b(?:(?:the|this|my|our|your)\s+)?(?:request|prompt|text|content|data)\s+(?:should|must|can|may)\s+not\s+be\s+(?:saved|stored|kept|retained|recorded|logged)\b/i.test(normalized)
-  return direct || pronoun || unwanted || passive
+  const negative = /(?:never|do(?:es|id)?\s+not|don't|doesn't|didn't|dont|doesnt|didnt|will\s+not|won't|wont|cannot|can't|cant|should\s+not|shouldn't|shouldnt|would\s+not|wouldn't|wouldnt)/
+  const storageVerb = '(?:save|store|keep|retain|record|log|persist|preserve|remember)'
+  const object = '(?:(?:(?:the|this|my|our|your|a|an|any)\\s+)?(?:(?:task|plan)\\s+)?(?:request|prompt|text|content|data|info|information|details|(?:personal|private|sensitive)\\s+(?:info|information|data|details)|contact\\s+(?:details|information|data)|conversation|chat|message|input|copy|name|address)|any(?:thing)?(?:\\s+(?:(?:of|from|in)\\s+(?:this|that|it|(?:the\\s+)?(?:prompt|request|conversation|chat|message))|(?:i|we)\\s+(?:tell|told|share|shared|provide|provided|send|sent|say|said)(?:\\s+you)?))?|what\\s+(?:i|we)\\s+(?:tell|told|share|shared|provide|provided|send|sent|say|said)(?:\\s+you)?)'
+  const privacyDescription = new RegExp(`\\b${negative.source}\\s+keep\\s+(?:(?:(?:the|this|my|our|your)\\s+)?(?:(?:task|plan)\\s+)?(?:request|prompt|text|content|data|information|details|(?:personal|private|sensitive)\\s+(?:information|data|details)|conversation|chat|message|input|copy)|it|this|that)\\s+(?:private|confidential|secret)\\b`, 'gi')
+  const firstPersonMemoryStatement = new RegExp(`\\b(?:i|we)\\s+${negative.source}\\s+remember\\b`, 'gi')
+  const candidate = normalized.replace(privacyDescription, ' ').replace(firstPersonMemoryStatement, ' ')
+  const direct = new RegExp(`\\b${negative.source}\\s+${storageVerb}\\s+${object}\\b`, 'i').test(candidate)
+  const pronoun = new RegExp(`\\b${negative.source}\\s+${storageVerb}\\s+(?:it|this|that|me)\\b`, 'i').test(candidate)
+  const unwanted = new RegExp(`\\b(?:i|we)\\s+${negative.source}\\s+want\\s+(?:you\\s+to\\s+)?${storageVerb}\\s+(?:${object}|it|this|that|me)\\b`, 'i').test(candidate)
+  const passive = /\b(?:(?:the|this|my|our|your|any)\s+)?(?:(?:task|plan)\s+)?(?:request|prompt|text|content|data|info|information|details|(?:personal|private|sensitive)\s+(?:info|information|data|details)|contact\s+(?:details|information|data)|conversation|chat|message|input|name|address)\s+(?:should|must|can|may)\s+not\s+be\s+(?:saved|stored|kept|retained|recorded|logged|persisted|preserved|remembered)\b/i.test(candidate)
+  const outOfHistory = /\b(?:please\s+)?(?:keep|put|save|store|retain|record|log|persist)\s+(?:it|this|that|(?:(?:the|my|our|your|any|personal|private|sensitive)\s+)*(?:request|prompt|conversation|chat|message|information|data|details|copy))\s+out\s+of\s+(?:(?:my|your|the)\s+)?(?:chat\s+)?(?:history|records?|logs?|memory|archives?)\b/i.test(candidate)
+  const forgetCandidate = candidate.replace(new RegExp(`\\b${negative.source}\\s+forget\\b`, 'gi'), ' ')
+  const forget = /\b(?:please\s+)?forget\s+(?:what\s+(?:i|we)\s+(?:just\s+)?(?:told|said|shared|provided|sent)(?:\s+you)?|(?:anything|everything)\s+(?:i|we)\s+(?:just\s+)?(?:told|said|shared|provided|sent)(?:\s+you)?|(?:this|that|it))\b/i.test(forgetCandidate)
+  const offRecordCandidate = candidate.replace(/\b(?:not|isn't|is\s+not)\s+off(?:[-\s]+the)?[-\s]+record\b/gi, ' ')
+  const offTheRecord = /\boff(?:[-\s]+the)?[-\s]+record\b/i.test(offRecordCandidate)
+  return direct || pronoun || unwanted || passive || outOfHistory || forget || offTheRecord
 }
 
 function splitIntoTasks(request: string) {

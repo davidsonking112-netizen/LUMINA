@@ -66,9 +66,51 @@ test('explicit no-save instructions are recognized without matching unrelated em
     'Please do not store my request.',
     "I don't want you to save this request.",
     'The request must not be retained.',
+    'Do not save any of this',
+    'Do not retain anything I tell you',
+    'This is private; do not store my information',
+    'Please do not store anything from this prompt',
+    'Keep this out of history',
+    'Never save any information from this conversation',
+    'Never retain anything I tell you',
+    'Do not remember me',
+    'Do not store what I tell you',
+    "Please don't keep a copy of this",
+    'Keep my details out of your records',
+    'Do not persist this prompt',
+    'Do not remember my name',
+    'Do not save my contact details',
+    'Do not retain my address',
+    'Please do not preserve this conversation',
+    'Forget what I just told you',
+    'This is off the record',
+    'This conversation is off-record.',
+    'Keep this off the record',
+    "Don't remember what I tell you",
+    "Don't remember what I told you",
+    "Don't remember what I said",
+    "Don't remember what I shared",
+    "Don't remember what I provided",
+    "Don't remember what I sent",
   ]) assert.equal(explicitlyRequestsNoSave(prompt), true, prompt)
 
-  assert.equal(explicitlyRequestsNoSave("Create a local task to review the checklist, but don't email the team because this is private."), false)
+  for (const prompt of [
+    "I don't remember my name",
+    "I can't remember my name",
+    'This conversation is not off-record.',
+    'This is not off the record.',
+    'Do not keep this private',
+    'Do not keep this confidential',
+    'Create a local task to review the checklist, but keep the checklist confidential.',
+    "Create a local task to review the checklist, but I don't want the email saved.",
+  ]) {
+    assert.equal(explicitlyRequestsNoSave(prompt), false, prompt)
+    if (prompt.startsWith('Create a local task')) assert.equal(asksForExplicitLocalTasks(prompt), true, prompt)
+  }
+
+  const separateEmailProhibition = "Create a local task to review the checklist, but don't email the team because this is private."
+  assert.equal(explicitlyRequestsNoSave(separateEmailProhibition), false)
+  assert.equal(asksForExplicitLocalTasks(separateEmailProhibition), true)
 })
 
 test('configured model returns a useful answer and deliverable independently from local tasks', async () => {

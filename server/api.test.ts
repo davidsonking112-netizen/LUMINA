@@ -169,6 +169,18 @@ test('Automatic mode is server-gated to explicit parser tasks and safely replays
     }).expect(201)
     assert.equal(unrelatedReasonProhibition.body.steps[0].status, 'done')
     assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 4)
+    const unrelatedPrivacyConstraint = await request(app).post('/api/plans').send({
+      request: 'Create a local task to review the checklist, but keep the checklist confidential.',
+      requestId: '00000000-0000-4000-8000-000000000042',
+    }).expect(201)
+    assert.equal(unrelatedPrivacyConstraint.body.steps[0].status, 'done')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 5)
+    const unrelatedEmailStorageConstraint = await request(app).post('/api/plans').send({
+      request: "Create a local task to review the checklist, but I don't want the email saved.",
+      requestId: '00000000-0000-4000-8000-000000000043',
+    }).expect(201)
+    assert.equal(unrelatedEmailStorageConstraint.body.steps[0].status, 'done')
+    assert.equal((await request(app).get('/api/tasks').expect(200)).body.length, 6)
 
     const clearedRequest = { request: 'Create a local task to test data-clear replay.', requestId: '00000000-0000-4000-8000-000000000019' }
     await request(app).post('/api/plans').send(clearedRequest).expect(201)
@@ -202,6 +214,26 @@ test('explicit no-save requests are rejected before generation or persistence', 
   const refusedRequests = [
     { request: 'Create a local task to review the private checklist, but do not save the request.', requestId: '00000000-0000-4000-8000-000000000044' },
     { request: 'Create a local task to review the private checklist, but do not save the request because this is private.', requestId: '00000000-0000-4000-8000-000000000045' },
+    { request: 'Do not save any of this', requestId: '00000000-0000-4000-8000-000000000046' },
+    { request: 'Do not retain anything I tell you', requestId: '00000000-0000-4000-8000-000000000047' },
+    { request: 'This is private; do not store my information', requestId: '00000000-0000-4000-8000-000000000048' },
+    { request: 'Please do not store anything from this prompt', requestId: '00000000-0000-4000-8000-000000000049' },
+    { request: 'Keep this out of history', requestId: '00000000-0000-4000-8000-000000000050' },
+    { request: 'Keep my details out of your records.', requestId: '00000000-0000-4000-8000-000000000051' },
+    { request: 'Do not persist this prompt.', requestId: '00000000-0000-4000-8000-000000000052' },
+    { request: 'Do not remember my name', requestId: '00000000-0000-4000-8000-000000000053' },
+    { request: 'Do not save my contact details', requestId: '00000000-0000-4000-8000-000000000054' },
+    { request: 'Do not retain my address', requestId: '00000000-0000-4000-8000-000000000055' },
+    { request: 'Please do not preserve this conversation', requestId: '00000000-0000-4000-8000-000000000056' },
+    { request: 'Forget what I just told you', requestId: '00000000-0000-4000-8000-000000000057' },
+    { request: 'This is off the record', requestId: '00000000-0000-4000-8000-000000000058' },
+    { request: "Don't remember what I told you", requestId: '00000000-0000-4000-8000-000000000059' },
+    { request: "Don't remember what I tell you", requestId: '00000000-0000-4000-8000-000000000060' },
+    { request: "Don't remember what I said", requestId: '00000000-0000-4000-8000-000000000061' },
+    { request: "Don't remember what I shared", requestId: '00000000-0000-4000-8000-000000000062' },
+    { request: "Don't remember what I provided", requestId: '00000000-0000-4000-8000-000000000063' },
+    { request: "Don't remember what I sent", requestId: '00000000-0000-4000-8000-000000000064' },
+    { request: 'This conversation is off-record.', requestId: '00000000-0000-4000-8000-000000000065' },
   ]
   let modelCalls = 0
 
@@ -237,6 +269,12 @@ test('explicit no-save requests are rejected before generation or persistence', 
     for (const refused of refusedRequests) {
       assert.equal((db.prepare('SELECT COUNT(*) AS count FROM idempotency_keys WHERE request_id = ?').get(refused.requestId) as { count: number }).count, 0)
     }
+
+    for (const requestText of ["I don't remember my name", "I can't remember my name"]) {
+      const ordinaryStatement = await request(app).post('/api/plans').send({ request: requestText }).expect(201)
+      assert.equal(ordinaryStatement.body.assistantOutput.status, 'generated')
+    }
+    assert.equal(modelCalls, 2)
   } finally {
     globalThis.fetch = previousFetch
     for (const key of keys) {
