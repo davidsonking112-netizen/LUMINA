@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import {
   Activity, ArrowDown, ArrowRight, Blocks, BookOpen, CalendarClock, Check, CheckCheck, ChevronDown,
-  CircleHelp, Clock3, Copy, FileText, Files, FolderOpen, History, Home, Inbox, LoaderCircle,
+  CircleHelp, Clock3, Copy, Download, FileText, Files, FolderOpen, History, Home, Inbox, LoaderCircle,
   ListTodo, LockKeyhole, Menu, MessageSquare, Mic, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
   Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen, Trash2, X,
 } from 'lucide-react'
@@ -15,6 +15,7 @@ import './chat-workbench.css'
 type Section = 'home' | 'chat' | 'inbox' | 'projects' | 'automations' | 'memory' | 'connected' | 'files' | 'history' | 'settings'
 type HistoryTab = 'plans' | 'tasks' | 'activity'
 type Toast = { id: number; text: string; kind: 'success' | 'error' }
+type AttachedFile = { name: string; content: string; size: number }
 
 const navigation: Array<{ id: Exclude<Section, 'chat'>; label: string; icon: typeof MessageSquare }> = [
   { id: 'home', label: 'Home', icon: Home },
@@ -87,6 +88,7 @@ function App() {
   const [activity, setActivity] = useState<AuditEvent[]>([])
   const [modelConfigured, setModelConfigured] = useState(false)
   const [draft, setDraft] = useState('')
+  const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null)
   const [searchText, setSearchText] = useState('')
   const [loading, setLoading] = useState(false)
   const [ready, setReady] = useState(false)
@@ -97,6 +99,7 @@ function App() {
   const [memoryContent, setMemoryContent] = useState('')
   const [memoryBusy, setMemoryBusy] = useState(false)
   const requestInputRef = useRef<HTMLTextAreaElement>(null)
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const menuToggleRef = useRef<HTMLButtonElement>(null)
 
@@ -169,10 +172,12 @@ function App() {
     setLoading(true)
     setError('')
     try {
-      const plan = await api.draftPlan(draft)
+      const fileContext = attachedFile ? `\n\nAttached file (${attachedFile.name}):\n${attachedFile.content.slice(0, 1500)}` : ''
+      const plan = await api.draftPlan(`${draft.trim()}${fileContext}`.slice(0, 2000))
       setPlans((items) => [plan, ...items.filter((item) => item.id !== plan.id)])
       setCurrentPlanId(plan.id)
       setDraft('')
+      setAttachedFile(null)
       setSection('chat')
       toast(plan.assistantOutput?.status === 'generated' ? 'Your answer is ready.' : plan.steps.length ? 'No answer generated. Local task titles were saved separately for review.' : 'No answer generated. Your request was saved locally; no content or task was created.')
       void refreshActivity()
@@ -193,6 +198,37 @@ function App() {
       toast('Draft copied.')
     } catch {
       toast('Could not copy the draft. You can still select its text.', 'error')
+    }
+  }
+
+  function downloadDeliverable(title: string, content: string) {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'lumina-draft'}.md`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast('Draft downloaded.')
+  }
+
+  async function attachFile(file: File | undefined) {
+    if (!file) return
+    if (!/\.(txt|md|markdown|csv|json|xml|html?)$/i.test(file.name)) {
+      toast('Choose a text, Markdown, CSV, JSON, XML, or HTML file.', 'error')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast('That file is larger than 2 MB. Choose a smaller text file.', 'error')
+      return
+    }
+    try {
+      setAttachedFile({ name: file.name, content: await file.text(), size: file.size })
+      setSection('chat')
+      window.requestAnimationFrame(() => requestInputRef.current?.focus())
+      toast(`${file.name} is ready for your next request.`)
+    } catch {
+      toast('LUMINA could not read that file.', 'error')
     }
   }
 
@@ -369,8 +405,8 @@ function App() {
     <div className={`app-shell ${desktopNavCollapsed ? 'nav-collapsed' : ''}`}>
       <aside ref={sidebarRef} className={`sidebar ${mobileNavOpen ? 'sidebar-open' : ''} ${desktopNavCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="Main navigation" aria-hidden={mobileViewport && !mobileNavOpen} inert={mobileViewport && !mobileNavOpen}>
         <div className="brand-row">
-          <div className="brand-mark" aria-hidden="true"><span>F</span><i /></div>
-          <div className="brand-copy"><strong>Forge</strong><span>Personal agent</span></div>
+          <div className="brand-mark" aria-hidden="true"><span>L</span><i /></div>
+          <div className="brand-copy"><strong>LUMINA</strong><span>Personal agent</span></div>
           <button className="icon-button mobile-close" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}><X size={18} /></button>
         </div>
         <button className="new-chat-button" aria-label="New task" title="New task" onClick={() => { setSection('chat'); setCurrentPlanId(''); setMobileNavOpen(false) }}><SquarePen size={17} /><span>New task</span></button>
@@ -434,14 +470,15 @@ function App() {
               {currentPlan ? <div className="conversation-block">
                 <div className="conversation-kicker"><span>STANDALONE REQUEST</span><time>{formatDate(currentPlan.createdAt)}</time></div>
                 <div className="message-bubble user-bubble"><div className="message-meta"><span className="message-label">YOU</span><span>REQUEST</span></div><p>{currentPlan.request}</p></div>
-                <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><div className="agent-identity"><strong>Forge</strong><span>{currentPlan.assistantOutput?.status === 'generated' ? 'Generated response' : 'Saved request'}</span></div><span className={`response-origin ${currentPlan.assistantOutput?.status === 'generated' ? 'response-generated' : 'response-local'}`}>{currentPlan.assistantOutput?.status === 'generated' ? 'ANSWER' : 'CAPABILITY NOTE'}</span></div><AssistantText text={currentPlan.assistantOutput?.answer ?? 'This saved request contains local task titles only. No generated answer or deliverable was saved with it.'} className="assistant-answer" />{currentPlan.assistantOutput?.deliverables?.map((deliverable, index) => <article className="deliverable-card" key={`${deliverable.title}-${index}`}><div className="deliverable-card-header"><div><span className="eyebrow">DRAFT · SAVED WITH THIS REQUEST</span><h2>{deliverable.title}</h2></div><button className="secondary-button" onClick={() => void copyDeliverable(deliverable.content)}><Copy size={14} /> Copy draft</button></div><div className="deliverable-content"><AssistantText text={deliverable.content} className="deliverable-richtext" /></div></article>)}</div></div>
+                <div className="agent-message"><div className="agent-avatar"><Sparkles size={15} /></div><div className="agent-message-body"><div className="agent-name-row"><div className="agent-identity"><strong>LUMINA</strong><span>{currentPlan.assistantOutput?.status === 'generated' ? 'Generated response' : 'Saved request'}</span></div><span className={`response-origin ${currentPlan.assistantOutput?.status === 'generated' ? 'response-generated' : 'response-local'}`}>{currentPlan.assistantOutput?.status === 'generated' ? 'ANSWER' : 'CAPABILITY NOTE'}</span></div><AssistantText text={currentPlan.assistantOutput?.answer ?? 'This saved request contains local task titles only. No generated answer or deliverable was saved with it.'} className="assistant-answer" />{currentPlan.assistantOutput?.deliverables?.map((deliverable, index) => <article className="deliverable-card" key={`${deliverable.title}-${index}`}><div className="deliverable-card-header"><div><span className="eyebrow">DRAFT · SAVED WITH THIS REQUEST</span><h2>{deliverable.title}</h2></div><div className="deliverable-actions"><button className="secondary-button" onClick={() => void copyDeliverable(deliverable.content)}><Copy size={14} /> Copy draft</button><button className="secondary-button" onClick={() => downloadDeliverable(deliverable.title, deliverable.content)}><Download size={14} /> Download</button></div></div><div className="deliverable-content"><AssistantText text={deliverable.content} className="deliverable-richtext" /></div></article>)}</div></div>
               </div> : loading ? <div className="chat-pending" role="status"><div className="chat-pending-mark"><LoaderCircle className="spin" size={18} /></div><div><strong>{modelConfigured ? 'Writing your answer…' : 'Saving your request…'}</strong><span>{modelConfigured ? 'Your completed response will appear here.' : 'No generated content is available without a model.'}</span></div></div> : null}
               <form className="composer" onSubmit={createPlan}>
                 <div className="composer-label-row"><span><MessageSquare size={14} /> NEW REQUEST</span><span>SHIFT + ENTER FOR A NEW LINE</span></div>
                 <p className="composer-context-note" id="composer-context-note">{currentPlan ? 'Each send starts a separate request; the one above isn’t included.' : 'Each submission starts a separate request; include any context it needs.'}</p>
-                <label className="sr-only" htmlFor="request">Message Forge</label>
+                <label className="sr-only" htmlFor="request">Message LUMINA</label>
                 <textarea ref={requestInputRef} id="request" aria-describedby="composer-context-note composer-disclosure" aria-keyshortcuts="Control+K Meta+K" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKey} maxLength={2000} placeholder={modelConfigured ? 'Ask a question or request a draft…' : 'Add local task titles, or request a draft…'} rows={2} />
-                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle">{modelConfigured ? <LockKeyhole size={13} /> : <Sparkles size={14} />}</span><span id="composer-disclosure">{modelConfigured ? 'Your prompt is sent to the configured external AI provider. Local tasks stay separate.' : 'No model connected. Submitted requests are saved locally; no answer is generated.'}</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><button className="composer-tool" type="button" disabled title="File attachments aren’t active in this prototype" aria-label="Attach a file, unavailable"><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input isn’t active in this prototype" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><span className="composer-count">{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>{modelConfigured ? 'Ask Forge' : 'Submit request'}</span></button></div></div>
+                {attachedFile && <div className="attachment-chip"><Paperclip size={14} /><span>{attachedFile.name}</span><small>{Math.max(1, Math.round(attachedFile.size / 1024))} KB · first 1,500 characters sent</small><button type="button" aria-label={`Remove ${attachedFile.name}`} onClick={() => setAttachedFile(null)}><X size={14} /></button></div>}
+                <div className="composer-footer"><div className="composer-hint"><span className="composer-sparkle">{modelConfigured ? <LockKeyhole size={13} /> : <Sparkles size={14} />}</span><span id="composer-disclosure">{modelConfigured ? 'Your prompt is sent to the configured external AI provider. Local tasks stay separate.' : 'No model connected. Submitted requests are saved locally; no answer is generated.'}</span><kbd>Ctrl/⌘ K</kbd></div><div className="composer-actions"><div className="composer-tools" aria-label="Optional input methods"><input ref={attachmentInputRef} className="sr-only" type="file" accept=".txt,.md,.markdown,.csv,.json,.xml,.html,.htm,text/plain,text/markdown,text/csv,application/json" onChange={(event) => { void attachFile(event.target.files?.[0]); event.currentTarget.value = '' }} /><button className="composer-tool" type="button" title="Attach a text file" aria-label="Attach a text file" onClick={() => attachmentInputRef.current?.click()}><Paperclip size={15} /></button><button className="composer-tool" type="button" disabled title="Voice input is not available yet" aria-label="Voice input, unavailable"><Mic size={15} /></button></div><span className="composer-count">{draft.length}/2,000</span><button className="send-button" type="submit" disabled={loading || draft.trim().length < 2}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={16} />}<span>{modelConfigured ? 'Ask LUMINA' : 'Submit request'}</span></button></div></div>
               </form>
             </div>
           </section>}
@@ -474,7 +511,7 @@ function App() {
 
           {section === 'connected' && <section className="page-view"><PageHeader icon={<Blocks size={19} />} eyebrow="PERMISSIONS YOU CONTROL" title="Connected Apps" description="See which services are linked and what Forge can access." /><div className="connection-summary"><span className="connection-summary-icon"><LockKeyhole size={18} /></span><div><strong>No apps connected</strong><p>This prototype has no email, calendar, messaging, storage or web-search connections.</p></div><span className="not-connected-pill">0 connected</span></div><div className="connection-list"><ConnectionCard icon={<Inbox size={17} />} title="Email" detail="Read, draft and send mail after approval" /><ConnectionCard icon={<CalendarClock size={17} />} title="Calendar" detail="Review availability and create approved events" /><ConnectionCard icon={<MessageSquare size={17} />} title="Messaging" detail="Draft messages and send only after approval" /><ConnectionCard icon={<Files size={17} />} title="Files" detail="Select, summarize and edit files you choose" /></div><p className="connection-disclosure"><ShieldCheck size={14} /> These are examples of future integrations, not active permissions. Nothing is connected or being accessed.</p></section>}
 
-          {section === 'files' && <section className="page-view"><PageHeader icon={<Files size={19} />} eyebrow="YOUR DOCUMENTS" title="Files" description="A place for files you choose to bring into a task." /><FeatureState icon={<Files size={21} />} title="File access isn’t available yet" description="This prototype can’t browse, upload, read or change your files. You can still create a local plan for a task that involves a document, but Forge won’t see the document itself." action={<button className="secondary-button" onClick={() => { setSection('chat'); setCurrentPlanId('') }}>Create a local plan <ArrowRight size={14} /></button>} /></section>}
+          {section === 'files' && <section className="page-view"><PageHeader icon={<Files size={19} />} eyebrow="YOUR DOCUMENTS" title="Files" description="Choose a text file and ask LUMINA to summarize, transform, or work from it." /><div className="feature-state"><span className="feature-state-icon"><Files size={21} /></span><span className="feature-state-label">LOCAL FILE CONTEXT</span><h2>{attachedFile ? attachedFile.name : 'Bring a file into your next request'}</h2><p>{attachedFile ? 'This file is held in memory for your next request only. It is not uploaded or stored by LUMINA until you submit.' : 'Supported formats: TXT, Markdown, CSV, JSON, XML, and HTML up to 2 MB. File contents are read in your browser and only the first 1,500 characters are sent with your prompt.'}</p><button className="secondary-button" onClick={() => { setSection('chat'); window.requestAnimationFrame(() => attachmentInputRef.current?.click()) }}><Paperclip size={14} /> {attachedFile ? 'Choose another file' : 'Choose a text file'}</button>{attachedFile && <button className="text-link" onClick={() => setAttachedFile(null)}>Remove file</button>}</div></section>}
 
           {section === 'history' && historyTab === 'activity' && <section className="page-view"><PageHeader icon={<History size={19} />} eyebrow="TRANSPARENCY" title="Task history" description="A clear record of local plans, approvals and outcomes." /><HistoryTabs active={historyTab} onChange={setHistoryTab} />
             <div className="audit-notice"><ShieldCheck size={17} /><span>Activity shows request/task details from records still saved on this device. Delete a plan to remove those details; its generic approval and outcome history remains. Export first if you want to keep a detailed copy.</span></div>

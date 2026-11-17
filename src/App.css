@@ -490,3 +490,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   .task-header-action span { display: none; }
   .breadcrumb-current { max-width: 38vw; }
 }
+.deliverable-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.attachment-chip { display: flex; align-items: center; gap: 8px; margin: 10px 18px 0; padding: 9px 11px; border: 1px solid rgba(115, 137, 166, .22); border-radius: 10px; background: rgba(244, 247, 251, .9); color: #27364a; font-size: 12px; }
+.attachment-chip span { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip small { color: #718096; margin-right: auto; }
+.attachment-chip button { display: inline-grid; place-items: center; border: 0; background: transparent; color: #718096; cursor: pointer; padding: 2px; }
+.attachment-chip button:hover { color: #1d2b3f; }
+@media (max-width: 620px) { .attachment-chip { align-items: flex-start; flex-wrap: wrap; } .attachment-chip small { width: calc(100% - 24px); margin-left: 22px; } .deliverable-actions { width: 100%; } }
