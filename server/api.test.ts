@@ -101,14 +101,36 @@ test('unconnected services stay inactive and unsupported workflows do not return
 
   const connectors = (await request(app).get('/api/connectors').expect(200)).body as Array<{ status: string; scopes: string[] }>
   assert.ok(connectors.length > 0)
-  assert.ok(connectors.every((connector) => connector.status === 'coming_soon' && connector.scopes.length === 0))
+  const researchConnector = connectors.find((connector) => connector.status === 'available')
+  assert.deepEqual(researchConnector?.scopes, ['search_public_web', 'read_public_pages'])
+  assert.ok(connectors.filter((connector) => connector !== researchConnector).every((connector) => connector.status === 'coming_soon' && connector.scopes.length === 0))
   assert.deepEqual((await request(app).get('/api/documents').expect(200)).body, [])
   assert.deepEqual((await request(app).get('/api/automations').expect(200)).body, [])
 
   const activityBefore = (await request(app).get('/api/activity').expect(200)).body.length
   await request(app).post('/api/automations/morning-briefing/toggle').send({ enabled: true }).expect(501)
-  await request(app).post('/api/research').send({ question: 'Compare recent market trends.' }).expect(501)
   assert.equal((await request(app).get('/api/activity').expect(200)).body.length, activityBefore)
+})
+
+test('web research returns source excerpts and a grounded fallback without a model', async () => {
+  const previousFetch = globalThis.fetch
+  const previousDisable = process.env.FORGE_LLM_DISABLE
+  process.env.FORGE_LLM_DISABLE = 'true'
+  globalThis.fetch = async (input) => {
+    const url = String(input)
+    if (url.includes('r.jina.ai')) return new Response('1. ## [Example source](https://example.com/research)\nA useful result excerpt.')
+    return new Response('<html><body><h1>Example source</h1><p>Reliable research evidence for the question. This longer excerpt represents the readable content returned by a public web page and gives LUMINA enough context to cite it safely.</p></body></html>')
+  }
+  try {
+    const response = await request(app).post('/api/research').send({ question: 'What is the evidence?' }).expect(200)
+    assert.equal(response.body.sources.length, 1)
+    assert.equal(response.body.sources[0].url, 'https://example.com/research')
+    assert.match(response.body.answer, /Example source/)
+  } finally {
+    globalThis.fetch = previousFetch
+    if (previousDisable === undefined) delete process.env.FORGE_LLM_DISABLE
+    else process.env.FORGE_LLM_DISABLE = previousDisable
+  }
 })
 
 test('generated answer and draft persist separately from local task actions', async () => {

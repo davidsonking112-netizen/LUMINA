@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { db, recordAudit } from './db.js'
 import { actionHash, draftPlan, isModelConfigured } from './plan.js'
+import { researchWeb } from './research.js'
 import type { AuditEvent, Connector, ForgeTask, MemoryEntry, Plan, PlanStep } from '../src/types.js'
 
 const app = express()
@@ -41,6 +42,7 @@ app.use(express.json({ limit: '32kb' }))
 const requestSchema = z.object({ request: z.string().trim().min(2).max(2000) })
 const editSchema = z.object({ steps: z.array(z.object({ id: z.string().uuid(), taskTitle: z.string().trim().min(2).max(120) })).min(1).max(8) })
 const memorySchema = z.object({ title: z.string().trim().min(2).max(80), content: z.string().trim().min(2).max(1200) })
+const researchSchema = z.object({ question: z.string().trim().min(2).max(500) })
 
 function loadPlan(id: string): Plan | undefined {
   const row = db.prepare('SELECT * FROM plans WHERE id = ?').get(id) as { id: string; request: string; generation_mode: Plan['generationMode']; status: Plan['status']; created_at: string; updated_at: string; steps_json: string; assistant_output_json?: string } | undefined
@@ -102,7 +104,7 @@ app.get('/api/capabilities', (_req, res) => res.json({
 app.get('/api/connectors', (_req, res) => {
   const connectors: Connector[] = [
     { id: 'local-files', name: 'Local files', category: 'Workspace', description: 'File access is not wired into this prototype.', status: 'coming_soon', scopes: [] },
-    { id: 'web-research', name: 'Web research', category: 'Research', description: 'Live web retrieval is not wired into this prototype.', status: 'coming_soon', scopes: [] },
+    { id: 'web-research', name: 'Web research', category: 'Research', description: 'Searches public web pages, extracts readable sources, and returns a cited synthesis.', status: 'available', scopes: ['search_public_web', 'read_public_pages'] },
     { id: 'gmail', name: 'Gmail', category: 'Communication', description: 'Email access is not wired into this prototype.', status: 'coming_soon', scopes: [] },
     { id: 'calendar', name: 'Calendar', category: 'Planning', description: 'Calendar access is not wired into this prototype.', status: 'coming_soon', scopes: [] },
     { id: 'slack', name: 'Slack', category: 'Communication', description: 'Messaging access is not wired into this prototype.', status: 'coming_soon', scopes: [] },
@@ -116,7 +118,16 @@ app.post('/api/automations/:id/toggle', (_req, res) => jsonError(res, 501, 'Auto
 
 app.get('/api/documents', (_req, res) => res.json([]))
 
-app.post('/api/research', (_req, res) => jsonError(res, 501, 'Live web research is not available in this prototype. No research report was created.'))
+app.post('/api/research', async (req, res) => {
+  const parsed = researchSchema.safeParse(req.body)
+  if (!parsed.success) return jsonError(res, 400, 'Enter a research question between 2 and 500 characters.')
+  try {
+    res.status(200).json(await researchWeb(parsed.data.question))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Web research failed.'
+    jsonError(res, 502, `${message} No research report was created.`)
+  }
+})
 
 app.get('/api/tasks', (_req, res) => {
   const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all() as Array<{ id: string; title: string; created_at: string; source_plan_id: string; source_step_id: string }>

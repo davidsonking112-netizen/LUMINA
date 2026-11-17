@@ -6,19 +6,20 @@ import {
   Paperclip, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, SquarePen, Trash2, X,
 } from 'lucide-react'
 import { api } from './api'
-import type { AuditEvent, ForgeTask, MemoryEntry, Plan } from './types'
+import type { AuditEvent, ForgeTask, MemoryEntry, Plan, ResearchReport } from './types'
 import './App.css'
 import './feature.css'
 import './chat-refresh.css'
 import './chat-workbench.css'
 
-type Section = 'home' | 'chat' | 'inbox' | 'projects' | 'automations' | 'memory' | 'connected' | 'files' | 'history' | 'settings'
+type Section = 'home' | 'chat' | 'research' | 'inbox' | 'projects' | 'automations' | 'memory' | 'connected' | 'files' | 'history' | 'settings'
 type HistoryTab = 'plans' | 'tasks' | 'activity'
 type Toast = { id: number; text: string; kind: 'success' | 'error' }
 type AttachedFile = { name: string; content: string; size: number }
 
 const navigation: Array<{ id: Exclude<Section, 'chat'>; label: string; icon: typeof MessageSquare }> = [
   { id: 'home', label: 'Home', icon: Home },
+  { id: 'research', label: 'Research', icon: Search },
   { id: 'inbox', label: 'Inbox', icon: Inbox },
   { id: 'projects', label: 'Projects', icon: FolderOpen },
   { id: 'automations', label: 'Automations', icon: CalendarClock },
@@ -89,6 +90,9 @@ function App() {
   const [modelConfigured, setModelConfigured] = useState(false)
   const [draft, setDraft] = useState('')
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null)
+  const [researchQuestion, setResearchQuestion] = useState('')
+  const [researchReport, setResearchReport] = useState<ResearchReport | null>(null)
+  const [researchBusy, setResearchBusy] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [loading, setLoading] = useState(false)
   const [ready, setReady] = useState(false)
@@ -229,6 +233,22 @@ function App() {
       toast(`${file.name} is ready for your next request.`)
     } catch {
       toast('LUMINA could not read that file.', 'error')
+    }
+  }
+
+  async function runResearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (researchQuestion.trim().length < 2 || researchBusy) return
+    setResearchBusy(true)
+    setError('')
+    try {
+      const report = await api.research(researchQuestion.trim())
+      setResearchReport(report)
+      toast(`Research complete · ${report.sources.length} sources reviewed.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'LUMINA could not complete that research.')
+    } finally {
+      setResearchBusy(false)
     }
   }
 
@@ -445,6 +465,15 @@ function App() {
               <article className="dashboard-panel"><div className="section-heading"><div><span className="eyebrow">ACTIVITY</span><h2>What’s happened</h2></div><button className="text-link" onClick={() => { setHistoryTab('activity'); setSection('history') }}>View activity <ArrowRight size={14} /></button></div>{activity.slice(0, 3).length ? <div className="dashboard-row-list">{activity.slice(0, 3).map((event) => <div className="dashboard-row" key={event.id}><span className="dashboard-row-icon activity"><Activity size={15} /></span><span className="dashboard-row-copy"><strong>{event.summary}</strong><small>{formatDate(event.occurredAt)}</small></span></div>)}</div> : <div className="dashboard-empty"><Activity size={17} /><span>Your activity will appear here as you plan and review work.</span></div>}</article>
             </div>
             <div className="dashboard-honesty"><LockKeyhole size={15} /><span>This prototype only creates and manages plans and tasks on this device. Connected services and automations are not active.</span></div>
+          </section>}
+          {section === 'research' && <section className="page-view research-view">
+            <PageHeader icon={<Search size={19} />} eyebrow="LUMINA RESEARCH" title="Research" description="Search public web pages, read the sources, and get a concise answer with inline citations." />
+            <form className="research-form" onSubmit={runResearch}>
+              <label htmlFor="research-question">What should LUMINA investigate?</label>
+              <div className="research-input-row"><input id="research-question" value={researchQuestion} onChange={(event) => setResearchQuestion(event.target.value)} maxLength={500} placeholder="e.g. Compare the leading open-source note-taking apps in 2026" /><button className="primary-button" type="submit" disabled={researchBusy || researchQuestion.trim().length < 2}>{researchBusy ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />} {researchBusy ? 'Researching…' : 'Research'}</button></div>
+              <small>Up to three readable public sources are fetched. LUMINA shows the URLs and excerpts so you can verify the answer.</small>
+            </form>
+            {researchReport ? <div className="research-result"><div className="research-answer-card"><div className="section-heading"><div><span className="eyebrow">SYNTHESIS · {researchReport.sources.length} SOURCES</span><h2>{researchReport.question}</h2></div><span className="research-date">{formatDate(researchReport.createdAt)}</span></div><AssistantText text={researchReport.answer} className="assistant-answer research-answer" />{researchReport.assumptions.length > 0 && <p className="research-assumptions"><strong>Notes:</strong> {researchReport.assumptions.join(' · ')}</p>}</div><div className="research-sources"><div className="section-heading"><div><span className="eyebrow">SOURCE TRAIL</span><h2>Read the sources</h2></div></div>{researchReport.sources.map((source, index) => <article className="research-source-card" key={source.id}><span className="source-number">{index + 1}</span><div><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><small>{source.publisher} · accessed {formatDate(source.accessedAt)}</small><p>{source.excerpt}</p></div></article>)}</div></div> : <EmptyState icon={<Search size={20} />} title="Start with a question" text="Ask about a product, decision, topic, or current event. LUMINA will return a source trail instead of an unsupported guess." />}
           </section>}
           {section === 'chat' && <section className={`chat-layout chat-workbench ${currentPlan ? 'has-conversation' : 'new-conversation'}`}>
             <div className="chat-column">

@@ -497,3 +497,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .attachment-chip button { display: inline-grid; place-items: center; border: 0; background: transparent; color: #718096; cursor: pointer; padding: 2px; }
 .attachment-chip button:hover { color: #1d2b3f; }
 @media (max-width: 620px) { .attachment-chip { align-items: flex-start; flex-wrap: wrap; } .attachment-chip small { width: calc(100% - 24px); margin-left: 22px; } .deliverable-actions { width: 100%; } }
+.research-form { margin: 22px 0 18px; padding: 17px; border: 1px solid #e4e7ee; border-radius: 12px; background: #fff; box-shadow: 0 5px 20px rgba(25,36,65,.035); }
+.research-form label { display: block; margin-bottom: 8px; color: #4a5260; font-size: 11px; font-weight: 700; }
+.research-input-row { display: flex; gap: 9px; }
+.research-input-row input { flex: 1; min-width: 0; height: 35px; padding: 0 11px; border: 1px solid #dfe3ea; border-radius: 8px; outline: 0; color: #3e4654; font-size: 11px; }
+.research-input-row input:focus { border-color: #aeb9f7; box-shadow: 0 0 0 3px rgba(70,95,233,.08); }
+.research-form small { display: block; margin-top: 9px; color: #9aa1ae; font-size: 9px; }
+.research-result { display: grid; gap: 13px; }
+.research-answer-card, .research-sources { padding: 17px; border: 1px solid #e4e7ee; border-radius: 12px; background: #fff; }
+.research-answer-card h2, .research-sources h2 { margin: 5px 0 0; color: #3e4654; font: 700 15px/1.3 Manrope, sans-serif; }
+.research-date { color: #a0a6b0; font-size: 9px; }
+.research-answer { margin-top: 16px; }
+.research-assumptions { margin: 14px 0 0; padding-top: 11px; border-top: 1px solid #f0f1f4; color: #8c94a2; font-size: 9px; line-height: 1.5; }
+.research-source-card { display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 10px; padding: 13px 0; border-top: 1px solid #f0f1f4; }
+.source-number { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; color: #4a5bcf; background: #eef0ff; font-size: 10px; font-weight: 800; }
+.research-source-card a { color: #4355c5; font-size: 11px; font-weight: 700; text-decoration: none; }
+.research-source-card a:hover { text-decoration: underline; }
+.research-source-card small { display: block; margin-top: 3px; color: #9aa1ae; font-size: 8px; }
+.research-source-card p { margin: 7px 0 0; color: #707989; font-size: 9px; line-height: 1.55; }
+@media (max-width: 620px) { .research-input-row { flex-direction: column; } .research-input-row .primary-button { width: 100%; } }
