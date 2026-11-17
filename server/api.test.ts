@@ -234,6 +234,12 @@ test('explicit no-save requests are rejected before generation or persistence', 
     { request: "Don't remember what I provided", requestId: '00000000-0000-4000-8000-000000000063' },
     { request: "Don't remember what I sent", requestId: '00000000-0000-4000-8000-000000000064' },
     { request: 'This conversation is off-record.', requestId: '00000000-0000-4000-8000-000000000065' },
+    { request: "I don't want this in your history", requestId: '00000000-0000-4000-8000-000000000066' },
+    { request: "I don't want this stored", requestId: '00000000-0000-4000-8000-000000000067' },
+    { request: "Please don't keep a record of this", requestId: '00000000-0000-4000-8000-000000000068' },
+    { request: "Don't archive this conversation", requestId: '00000000-0000-4000-8000-000000000069' },
+    { request: 'Do not retain my phone number', requestId: '00000000-0000-4000-8000-000000000070' },
+    { request: 'Please delete the prompt after answering', requestId: '00000000-0000-4000-8000-000000000071' },
   ]
   let modelCalls = 0
 

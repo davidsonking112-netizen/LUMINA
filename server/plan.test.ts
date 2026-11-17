@@ -92,6 +92,12 @@ test('explicit no-save instructions are recognized without matching unrelated em
     "Don't remember what I shared",
     "Don't remember what I provided",
     "Don't remember what I sent",
+    "I don't want this in your history",
+    "I don't want this stored",
+    "Please don't keep a record of this",
+    "Don't archive this conversation",
+    'Do not retain my phone number',
+    'Please delete the prompt after answering',
   ]) assert.equal(explicitlyRequestsNoSave(prompt), true, prompt)
 
   for (const prompt of [
