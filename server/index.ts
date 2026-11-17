@@ -84,7 +84,12 @@ function resetApprovalForReview(plan: Plan, step: PlanStep, eventType: string, s
   recordAudit(eventType, 'plan_step', step.id, summary)
 }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'local-prototype' }))
+app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  mode: 'local-prototype',
+  modelConfigured: process.env.FORGE_LLM_DISABLE !== 'true' && Boolean((process.env.FORGE_LLM_API_KEY ?? process.env.OPENAI_API_KEY) && (process.env.FORGE_LLM_BASE_URL ?? process.env.OPENAI_API_BASE)),
+  model: process.env.FORGE_LLM_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5-mini',
+}))
 
 app.get('/api/capabilities', (_req, res) => res.json({
   permissionModes: [{ id: 'approve', label: 'Review every action', description: 'Each local task waits for explicit approval before it is added.' }],

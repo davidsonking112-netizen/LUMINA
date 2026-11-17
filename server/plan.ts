@@ -27,7 +27,10 @@ export function actionHash(planId: string, step: Pick<PlanStep, 'id' | 'kind' | 
 }
 
 export function isModelConfigured() {
-  return Boolean(process.env.FORGE_LLM_API_KEY && process.env.FORGE_LLM_MODEL && process.env.FORGE_LLM_BASE_URL)
+  return process.env.FORGE_LLM_DISABLE !== 'true' && Boolean(
+    (process.env.FORGE_LLM_API_KEY ?? process.env.OPENAI_API_KEY)
+    && (process.env.FORGE_LLM_BASE_URL ?? process.env.OPENAI_API_BASE),
+  )
 }
 
 function splitIntoTasks(request: string) {
@@ -48,9 +51,10 @@ function normalizeTaskTitle(clause: string) {
 }
 
 async function generateAssistantOutput(request: string): Promise<{ output: AssistantOutput; localTasks: string[]; assumptions: string[] } | undefined> {
-  const apiKey = process.env.FORGE_LLM_API_KEY
-  const model = process.env.FORGE_LLM_MODEL
-  const baseUrl = process.env.FORGE_LLM_BASE_URL?.replace(/\/$/, '')
+  if (process.env.FORGE_LLM_DISABLE === 'true' && !process.env.FORGE_LLM_API_KEY) return undefined
+  const apiKey = process.env.FORGE_LLM_API_KEY ?? process.env.OPENAI_API_KEY
+  const model = process.env.FORGE_LLM_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5-mini'
+  const baseUrl = (process.env.FORGE_LLM_BASE_URL ?? process.env.OPENAI_API_BASE)?.replace(/\/$/, '')
   if (!apiKey || !model || !baseUrl) return undefined
   const endpoint = new URL(baseUrl)
   const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]'])

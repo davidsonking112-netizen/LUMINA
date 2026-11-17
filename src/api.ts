@@ -14,7 +14,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ ok: boolean; mode: string }>('/api/health'),
+  health: () => request<{ ok: boolean; mode: string; modelConfigured: boolean; model: string }>('/api/health'),
   exportWorkspace: () => request<Record<string, unknown>>('/api/export'),
   clearWorkspace: () => request<void>('/api/data', { method: 'DELETE' }),
   tasks: () => request<ForgeTask[]>('/api/tasks'),
